@@ -6,14 +6,16 @@ set -o nounset
 
 info() { echo -e "\033[32m${1} \033[1;32m${2-}\033[0m"; }
 
-# Make a root directory
-ROOT="/opt/vpn-behind-outline"
+# Set a title and make a root directory
+TITLE="vpn-behind-outline"
+ROOT="/opt/${TITLE}"
 mkdir --parents "${ROOT}/bin"
 
 # Get or make numbers of public ports for Outline
 test -f "${ROOT}/ports" || cat >"${ROOT}/ports" <<EOL
 API_PORT=$((1024 + RANDOM + (RANDOM % 2) * 30000))
 KEYS_PORT=$((1024 + RANDOM + (RANDOM % 2) * 30000))
+ADDITIONAL_PORTS="22 80 443"
 EOL
 source "${ROOT}/ports"
 
@@ -44,14 +46,16 @@ docker ps | grep shadowbox >/dev/null ||
 cat >"${ROOT}/bin/up-vpn.sh" <<EOL
 #!/bin/sh
 export PATH=$PATH
-log() { echo "\$(date) - \${1}" >> /var/log/vpn.log; }
+log() { echo "\$(date) - \${1}" >> "/var/log/${TITLE}.log"; }
 log "Wait some time and boot up"; sleep 10;
 # Enable BBR to improve network performance
 sysctl net.core.default_qdisc=fq
 sysctl net.ipv4.tcp_congestion_control=bbr
 # Configure NordVPN
 nordvpn whitelist remove all
-nordvpn whitelist add port 22
+$(for port in ${ADDITIONAL_PORTS}
+  do echo "nordvpn whitelist add port ${port}"
+done)
 nordvpn whitelist add port ${API_PORT}
 nordvpn whitelist add port ${KEYS_PORT}
 nordvpn whitelist add subnet ${CIDR}
@@ -84,6 +88,28 @@ EOL
 chmod +x "${ROOT}/bin/up-vpn.sh"
 echo "@reboot sh ${ROOT}/bin/up-vpn.sh >/dev/null 2>&1" | crontab -
 
+# Create a task to uninstall this tool
+cat >"${ROOT}/bin/uninstall.sh" <<EOL
+#!/bin/sh
+export PATH=$PATH
+log() { echo "\$(date) - \${1}" >> "/var/log/${TITLE}.log"; }
+log "Remove NordVPN";
+  nordvpn disconnect
+  nordvpn logout
+  apt remove nordvpn -y
+log "Remove Outline";
+  docker rm --force shadowbox watchtower
+  docker system prune --force --all
+  rm --recursive --force /opt/outline
+log "Restore routing";
+  ip rule del table 128
+  ip route flush table 128
+log "Remove this tool";
+  crontab -l | grep --invert-match "${TITLE}" | crontab -
+  rm --recursive --force "${ROOT}"
+EOL
+chmod +x "${ROOT}/bin/uninstall.sh"
+
 # TODO: Remove after fixing the bug of NordVPN 3.11.0
 # Create a temporary task to fix freezing of NordVPN
 # (approximately, each 4 hours 20 minutes). Details,
@@ -95,7 +121,8 @@ echo "@reboot sh ${ROOT}/bin/up-vpn.sh >/dev/null 2>&1" | crontab -
 #   echo "@reboot sh /opt/vpn-behind-outline/bin/up-vpn.sh >/dev/null 2>&1" | crontab -
 cat >"${ROOT}/bin/fix-vpn.sh" <<EOL
 #!/bin/sh
-log() { echo "\$(date) - \${1}" >> /var/log/vpn.log; }
+export PATH=$PATH
+log() { echo "\$(date) - \${1}" >> "/var/log/${TITLE}.log"; }
 log "Recreate connection"; nordvpn connect
 EOL
 chmod +x "${ROOT}/bin/fix-vpn.sh"
@@ -113,6 +140,7 @@ info "- CIDR:" "${CIDR}"
 info "\nNordVPN behind Outline has been successfully configured:"
 info "- management port:" "${API_PORT} (TCP)"
 info "- access key port:" "${KEYS_PORT} (TCP and UDP)"
+info "- additional ports:" "${ADDITIONAL_PORTS}"
 info "\nPlease, do the following:"
 api=$(grep "apiUrl" "/opt/outline/access.txt" | sed "s/apiUrl://")
 cert=$(grep "certSha256" "/opt/outline/access.txt" | sed "s/certSha256://")
