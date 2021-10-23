@@ -84,6 +84,28 @@ EOL
 chmod +x "${ROOT}/bin/up-vpn.sh"
 echo "@reboot sh ${ROOT}/bin/up-vpn.sh >/dev/null 2>&1" | crontab -
 
+# Create a task to uninstall this tool
+cat >"${ROOT}/bin/uninstall.sh" <<EOL
+#!/bin/sh
+export PATH=$PATH
+log() { echo "\$(date) - \${1}" >> /var/log/vpn.log; }
+log "Remove NordVPN";
+  nordvpn disconnect
+  nordvpn logout
+  apt remove nordvpn -y
+log "Remove Outline";
+  docker rm --force shadowbox watchtower
+  docker system prune --force --all
+  rm --recursive --force /opt/outline
+log "Restore routing";
+  ip rule del table 128
+  ip route flush table 128
+log "Remove this tool";
+  crontab -l | grep --invert-match vpn-behind-outline | crontab -
+  rm --recursive --force ${ROOT}
+EOL
+chmod +x "${ROOT}/bin/uninstall.sh"
+
 # TODO: Remove after fixing the bug of NordVPN 3.11.0
 # Create a temporary task to fix freezing of NordVPN
 # (approximately, each 4 hours 20 minutes). Details,

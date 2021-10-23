@@ -35,3 +35,6 @@ behind [Outline](https://getoutline.org/). Just create a gateway by using this t
 
 In order to update this tool to the latest version, just repeat the second and fourth steps of this guide. Later, you
 can find open ports by running ```ss --processes --listening --tcp``` if you have forgotten them.
+
+In order to uninstall this tool, just run ```/opt/vpn-behind-outline/bin/uninstall.sh``` as root (do not forget to
+disconnect VPN to keep a connection via SSH to the server after uninstalling this tool).
