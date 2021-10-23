@@ -36,6 +36,9 @@ cat >/usr/local/bin/vpn.sh <<EOL
 #!/bin/sh
 log() { echo "\$(date) - \${1}" >> /var/log/vpn.log; }
 log "Boot up"; sleep 10
+# Enable BBR to improve network performance
+/usr/sbin/sysctl net.core.default_qdisc=fq
+/usr/sbin/sysctl net.ipv4.tcp_congestion_control=bbr
 # Configure NordVPN
 nordvpn whitelist remove all
 nordvpn whitelist add port 22
