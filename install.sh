@@ -6,8 +6,9 @@ set -o nounset
 
 info() { echo -e "\033[32m${1} \033[1;32m${2-}\033[0m"; }
 
-# Make a root directory
-ROOT="/opt/vpn-behind-outline"
+# Set a title and make a root directory
+TITLE="vpn-behind-outline"
+ROOT="/opt/${TITLE}"
 mkdir --parents "${ROOT}/bin"
 
 # Get or make numbers of public ports for Outline
@@ -44,7 +45,7 @@ docker ps | grep shadowbox >/dev/null ||
 cat >"${ROOT}/bin/up-vpn.sh" <<EOL
 #!/bin/sh
 export PATH=$PATH
-log() { echo "\$(date) - \${1}" >> /var/log/vpn.log; }
+log() { echo "\$(date) - \${1}" >> "/var/log/${TITLE}.log"; }
 log "Wait some time and boot up"; sleep 10;
 # Enable BBR to improve network performance
 sysctl net.core.default_qdisc=fq
@@ -88,7 +89,7 @@ echo "@reboot sh ${ROOT}/bin/up-vpn.sh >/dev/null 2>&1" | crontab -
 cat >"${ROOT}/bin/uninstall.sh" <<EOL
 #!/bin/sh
 export PATH=$PATH
-log() { echo "\$(date) - \${1}" >> /var/log/vpn.log; }
+log() { echo "\$(date) - \${1}" >> "/var/log/${TITLE}.log"; }
 log "Remove NordVPN";
   nordvpn disconnect
   nordvpn logout
@@ -101,8 +102,8 @@ log "Restore routing";
   ip rule del table 128
   ip route flush table 128
 log "Remove this tool";
-  crontab -l | grep --invert-match vpn-behind-outline | crontab -
-  rm --recursive --force ${ROOT}
+  crontab -l | grep --invert-match "${TITLE}" | crontab -
+  rm --recursive --force "${ROOT}"
 EOL
 chmod +x "${ROOT}/bin/uninstall.sh"
 
@@ -117,7 +118,8 @@ chmod +x "${ROOT}/bin/uninstall.sh"
 #   echo "@reboot sh /opt/vpn-behind-outline/bin/up-vpn.sh >/dev/null 2>&1" | crontab -
 cat >"${ROOT}/bin/fix-vpn.sh" <<EOL
 #!/bin/sh
-log() { echo "\$(date) - \${1}" >> /var/log/vpn.log; }
+export PATH=$PATH
+log() { echo "\$(date) - \${1}" >> "/var/log/${TITLE}.log"; }
 log "Recreate connection"; nordvpn connect
 EOL
 chmod +x "${ROOT}/bin/fix-vpn.sh"
