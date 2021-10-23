@@ -15,7 +15,7 @@ behind [Outline](https://getoutline.org/). Just create a gateway by using this t
 
 2. Connect to the server via SSH and log in as root if needed:
 
-   ```sudo su -```
+   ```sudo --login```
 
 3. Upgrade the server:
 
@@ -35,6 +35,9 @@ behind [Outline](https://getoutline.org/). Just create a gateway by using this t
 
 In order to update this tool to the latest version, just repeat the second and fourth steps of this guide. Later, you
 can find open ports by running ```ss --processes --listening --tcp``` if you have forgotten them.
+
+In order close or open additional ports, just edit their numbers by running ```nano /opt/vpn-behind-outline/ports``` as
+root, whereupon repeat the second and fourth steps of this guide.
 
 In order to uninstall this tool, just run ```/opt/vpn-behind-outline/bin/uninstall.sh``` as root (do not forget to
 disconnect VPN to keep a connection via SSH to the server after uninstalling this tool).

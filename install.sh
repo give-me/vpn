@@ -15,6 +15,7 @@ mkdir --parents "${ROOT}/bin"
 test -f "${ROOT}/ports" || cat >"${ROOT}/ports" <<EOL
 API_PORT=$((1024 + RANDOM + (RANDOM % 2) * 30000))
 KEYS_PORT=$((1024 + RANDOM + (RANDOM % 2) * 30000))
+ADDITIONAL_PORTS="22 80 443"
 EOL
 source "${ROOT}/ports"
 
@@ -52,7 +53,9 @@ sysctl net.core.default_qdisc=fq
 sysctl net.ipv4.tcp_congestion_control=bbr
 # Configure NordVPN
 nordvpn whitelist remove all
-nordvpn whitelist add port 22
+$(for port in ${ADDITIONAL_PORTS}
+  do echo "nordvpn whitelist add port ${port}"
+done)
 nordvpn whitelist add port ${API_PORT}
 nordvpn whitelist add port ${KEYS_PORT}
 nordvpn whitelist add subnet ${CIDR}
@@ -137,6 +140,7 @@ info "- CIDR:" "${CIDR}"
 info "\nNordVPN behind Outline has been successfully configured:"
 info "- management port:" "${API_PORT} (TCP)"
 info "- access key port:" "${KEYS_PORT} (TCP and UDP)"
+info "- additional ports:" "${ADDITIONAL_PORTS}"
 info "\nPlease, do the following:"
 api=$(grep "apiUrl" "/opt/outline/access.txt" | sed "s/apiUrl://")
 cert=$(grep "certSha256" "/opt/outline/access.txt" | sed "s/certSha256://")
