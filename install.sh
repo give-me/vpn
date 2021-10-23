@@ -68,5 +68,25 @@ EOL
 chmod +x /usr/local/bin/vpn.sh
 echo "@reboot sh /usr/local/bin/vpn.sh >/dev/null 2>&1" | crontab -
 
+# TODO: Remove after fixing the bug of NordVPN 3.11.0
+# Create a temporary task to fix freezing of NordVPN
+# (approximately, each 4 hours 20 minutes). Details,
+# reasons and solutions can be found here:
+# - https://forum.manjaro.org/t/nordvpn-bin-breaks-every-4-hours/80927
+# - https://aur.archlinux.org/packages/nordvpn-bin#comment-829416
+# Commands to uninstall the temporary task:
+#   rm /usr/local/bin/fix-vpn.sh
+#   echo "@reboot sh /usr/local/bin/vpn.sh >/dev/null 2>&1" | crontab -
+cat >/usr/local/bin/fix-vpn.sh <<EOL
+#!/bin/sh
+log() { echo "\$(date) - \${1}" >> /var/log/vpn.log; }
+log "Recreate connection"; nordvpn connect
+EOL
+chmod +x /usr/local/bin/fix-vpn.sh
+crontab -l | {
+  cat
+  echo "0 */4 * * * sh /usr/local/bin/fix-vpn.sh >/dev/null 2>&1"
+} | crontab -
+
 # Notify about following actions
 info "Configure Outline Manager and run: nordvpn login && reboot"
