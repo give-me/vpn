@@ -47,6 +47,7 @@ cat >"${ROOT}/bin/up-vpn.sh" <<EOL
 #!/bin/sh
 export PATH=$PATH
 log() { echo "\$(date) - \${1}" >> "/var/log/${TITLE}.log"; }
+check() { ping -q -w 5 1.1.1.1 || return 1 && return 0; }
 log "Wait some time and boot up"; sleep 10;
 # Enable BBR to improve network performance
 sysctl net.core.default_qdisc=fq
@@ -71,7 +72,8 @@ ip route add table 128 default via ${GW}
 # Check health
 while :
 do
-  sleep 10; ping -q -w 5 1.1.1.1 && continue
+  # Check connection twice
+  sleep 10; check || check && continue
   log "Lost connection"
   log "Try to reconnect NordVPN";
     timeout 10s nordvpn connect &&
