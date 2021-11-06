@@ -112,12 +112,13 @@ log "Remove this tool";
 EOL
 chmod +x "${ROOT}/bin/uninstall.sh"
 
-# TODO: Remove after fixing the bug of NordVPN 3.11.0
+# TODO: Remove after fixing the bug of NordVPN 3.11.0–3.12.0
+#  (https://nordvpn.com/ru/blog/nordvpn-linux-release-notes/)
 # Create a temporary task to fix freezing of NordVPN
-# (approximately, each 4 hours 20 minutes). Details,
+# (approximately, each 2 hours 10 minutes). Details,
 # reasons and solutions can be found here:
-# - https://forum.manjaro.org/t/nordvpn-bin-breaks-every-4-hours/80927
-# - https://aur.archlinux.org/packages/nordvpn-bin#comment-829416
+# - https://forum.manjaro.org/t/nordvpn-bin-breaks-every-4-hours/80927/32
+# - https://aur.archlinux.org/packages/nordvpn-bin
 # Commands to uninstall the temporary task:
 #   rm /opt/vpn-behind-outline/bin/fix-vpn.sh
 #   echo "@reboot sh /opt/vpn-behind-outline/bin/up-vpn.sh >/dev/null 2>&1" | crontab -
@@ -130,7 +131,7 @@ EOL
 chmod +x "${ROOT}/bin/fix-vpn.sh"
 crontab -l | {
   cat
-  echo "0 */4 * * * sh ${ROOT}/bin/fix-vpn.sh >/dev/null 2>&1"
+  echo "0 */2 * * * sh ${ROOT}/bin/fix-vpn.sh >/dev/null 2>&1"
 } | crontab -
 
 # Notify about following actions
