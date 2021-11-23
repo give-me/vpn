@@ -6,6 +6,8 @@ behind [Outline](https://getoutline.org/). Just create a gateway by using this t
 
 ## Usage
 
+### Install
+
 1. Make some preparations:
     1. Buy a subscription for [NordVPN](https://nordvpn.com/).
     1. Install Outline Manager in order to have a possibility to generate and manage keys. Install Outline Client App in
@@ -21,23 +23,18 @@ behind [Outline](https://getoutline.org/). Just create a gateway by using this t
 
    ```apt update && apt upgrade -y```
 
-4. Configure the server by one of the following commands and follow further instructions:
+4. Configure the server and follow further instructions:
 
-   ```bash -c "$(curl -sSL https://github.com/give-me/vpn/raw/master/install.sh)"``` to access by a default ip-address
+   ```bash -c "$(curl -sSL https://github.com/give-me/vpn/raw/master/install.sh)"```
 
-   or
+Later, you can find open ports by running ```ss --processes --listening --tcp``` if you have forgotten them. In order to
+change configuration, just repeat the second and fourth steps of this guide.
 
-   ```bash -c "$(curl -sSL https://github.com/give-me/vpn/raw/master/install.sh)" -- 1.2.3.4``` – by a custom ip-address
+### Update
 
-   or
+In order to update this tool to the latest version, just repeat the second and fourth steps of this guide.
 
-   ```bash -c "$(curl -sSL https://github.com/give-me/vpn/raw/master/install.sh)" -- example.com``` – by a domain name
+### Uninstall
 
-In order to update this tool to the latest version, just repeat the second and fourth steps of this guide. Later, you
-can find open ports by running ```ss --processes --listening --tcp``` if you have forgotten them.
-
-In order close or open additional ports, just edit their numbers by running ```nano /opt/vpn-behind-outline/ports``` as
-root, whereupon repeat the second and fourth steps of this guide.
-
-In order to uninstall this tool, just run ```/opt/vpn-behind-outline/bin/uninstall.sh``` as root (do not forget to
+In order to uninstall this tool, just run ```/opt/vpn-behind-outline/bin/remove.sh``` as root (do not forget to
 disconnect VPN to keep a connection via SSH to the server after uninstalling this tool).

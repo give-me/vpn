@@ -4,77 +4,175 @@ set -o errexit
 set -o pipefail
 set -o nounset
 
-info() { echo -e "\033[32m${1} \033[1;32m${2-}\033[0m"; }
-test $EUID -ne 0 && info "You are not root" && exit 1
-
-# Set a title and make a root directory
-TITLE="vpn-behind-outline"
+TITLE="vpn-gateway"
 ROOT="/opt/${TITLE}"
+PORTS=(22)
+declare GUIDE
+declare VPN_UP
+declare VPN_READY
+declare VPN_REPAIR
+declare REMOVE_ALL
+
+# Color messages and dialogs
+style() {
+  msg="$(tput setaf "${1}")${2}"
+  test -z "${3-}" || msg+=" $(tput bold)${3}"
+  echo -e -n "${msg}$(tput sgr0)"
+}
+function ask() { style 3 "${1} "; }
+function info() { style 2 "${1}" "${2-}"; }
+function error() { style 1 "${1}" "${2-}" && exit 1; }
+function prompt() { while :; do
+  ask "${1} [and press Enter]:" && read -r
+  test -z "${REPLY}" || return 0
+done; }
+function confirm() { while :; do
+  ask "${1} [Y/N]" && read -r -s -n 1
+  [[ "${REPLY}" =~ ^y|Y$ ]] && echo && return 0
+  [[ "${REPLY}" =~ ^n|N$ ]] && echo && return 1
+  style 31 "wrong answer" && echo
+done; }
+
+# Check root permissions
+test $EUID -ne 0 && error "You are not root"
+
+# Make a root directory
 mkdir --parents "${ROOT}/bin"
 
-# Get or make numbers of public ports for Outline
-test -f "${ROOT}/ports" || cat >"${ROOT}/ports" <<EOL
-API_PORT=$((1024 + RANDOM + (RANDOM % 2) * 30000))
-KEYS_PORT=$((1024 + RANDOM + (RANDOM % 2) * 30000))
-ADDITIONAL_PORTS="22 80 443"
-EOL
-source "${ROOT}/ports"
-
-# Calculate interface details
+# Get details of a main interface
 DEV=$(ip route show default | awk '{print $5}')
 GW=$(ip route show default | awk '{print $3}')
 IP=$(ip route get "${GW}" | awk '{print $5}')
 CIDR=$(ip route | grep / | grep "${IP}" | awk '{print $1}')
 
-# Install Docker
-which docker >/dev/null ||
-  curl -sSL https://get.docker.com/ | sh
+# Extend the guide
+GUIDE+="$(info "Interface ${DEV} was detected as default:")\n"
+GUIDE+="$(info "- ip:" "${IP}")\n"
+GUIDE+="$(info "- gateway:" "${GW}")\n"
+GUIDE+="$(info "- CIDR:" "${CIDR}")\n\n"
+
+# Additional parameters
+clear -x && confirm "Would you like to open HTTP and HTTPS ports?" && PORTS+=(80 443)
+
+##########################################
+###   Channels to connect the server   ###
+##########################################
+
+# Make and append instructions to remove
+clear -x && remove="
+  # Outline VPN
+  which docker >/dev/null && {
+    docker rm --force shadowbox watchtower 2>/dev/null
+    docker system prune --force --all
+  }
+  rm --recursive --force /opt/outline
+  rm --force ${ROOT}/outline" && REMOVE_ALL+="${remove}"
+if confirm "Should this server be accessible via Outline VPN?"; then
+  # Install Docker
+  which docker >/dev/null || curl -sSL https://get.docker.com/ | sh
+  # Get or generate random numbers of public ports for Outline
+  test -f "${ROOT}/outline" || {
+    ports="api_port=$((1024 + RANDOM + (RANDOM % 2) * 30000))\n"
+    ports+="keys_port=$((1024 + RANDOM + (RANDOM % 2) * 30000))"
+    echo -e "${ports}" >"${ROOT}/outline"
+  } && source "${ROOT}/outline" && PORTS+=("${api_port}" "${keys_port}")
+  # Get a custom host if it is a new installation
+  hostname="$IP" && config="/opt/outline/access.txt"
+  test -f ${config} || {
+    confirm "Would you like to access Outline VPN by IP ${IP}?" ||
+      { prompt "Specify another IP or a domain name" && hostname="${REPLY}"; }
+  }
+  # Install and run Outline VPN
+  url="https://github.com/Jigsaw-Code/outline-server/raw/master"
+  url+="/src/server_manager/install_scripts/install_server.sh"
+  docker ps | grep shadowbox >/dev/null || bash -c "$(curl -sSL ${url})" -- \
+    --hostname="${hostname}" --api-port="${api_port}" --keys-port="${keys_port}"
+  # Extend the guide
+  api_url=$(grep "apiUrl" "${config}" | sed "s/apiUrl://")
+  cert_sha=$(grep "certSha256" "${config}" | sed "s/certSha256://")
+  secret="{\"apiUrl\":\"${api_url}\",\"certSha256\":\"${cert_sha}\"}"
+  GUIDE+="$(info "In order to access via Outline VPN, do the following:")\n"
+  GUIDE+="$(info "1) Ensure that ports are open:")\n"
+  GUIDE+="$(info "- management port:" "${api_port} (TCP)")\n"
+  GUIDE+="$(info "- access key port:" "${keys_port} (TCP and UDP)")\n"
+  GUIDE+="$(info "2) Configure Outline Manager with the following string:" "${secret}")\n\n"
+else eval "${remove}"; fi
+
+###################################
+###   VPN preventing IP leaks   ###
+###################################
+
+# Make and append instructions to remove
+clear -x && remove="
+  # NordVPN
+  which nordvpn >/dev/null && {
+    nordvpn disconnect
+    nordvpn logout
+    apt remove nordvpn -y
+  }" && REMOVE_ALL+="${remove}"
 
 # Install NordVPN
-which nordvpn >/dev/null ||
-  curl -sSL https://downloads.nordcdn.com/apps/linux/install.sh | sh
-
-# Install and run Outline
-PUBLIC=$(test $# -eq 1 && echo "$@" || echo "$IP")
-docker ps | grep shadowbox >/dev/null ||
-  bash -c "$(curl -sSL https://github.com/Jigsaw-Code/outline-server/raw/master/src/server_manager/install_scripts/install_server.sh)" \
-    install_server.sh \
-    --hostname="${PUBLIC}" \
-    --api-port="${API_PORT}" \
-    --keys-port="${KEYS_PORT}"
+which nordvpn >/dev/null || curl -sSL https://downloads.nordcdn.com/apps/linux/install.sh | sh
 
 # Let choose a country or group as prior
-clear -x
-info "\nNordVPN can connect to specific country or group"
-echo -e "\nAvailable countries:" && nordvpn countries | xargs
-echo -e "\nAvailable groups:" && nordvpn groups | xargs
-echo -e "\nSpecify name if needed and press Enter:"
-read -r choice && vpn="nordvpn connect"
-test -z "${choice}" || vpn="${vpn} ${choice} || ${vpn}"
+clear -x && vpn="nordvpn connect"
+confirm "Do you allow NordVPN to choose a server's country or group?" || {
+  info "Available countries:\n" && nordvpn countries | xargs
+  info "Available groups:\n" && nordvpn groups | xargs
+  prompt "Specify a country or group" && prior="${REPLY}"
+  vpn="${vpn} ${prior} || ${vpn}"
+}
 
-# Create a task on startup
-cat >"${ROOT}/bin/up-vpn.sh" <<EOL
-#!/bin/sh
-export PATH=$PATH
-log() { echo "\$(date) - \${1}" >> "/var/log/${TITLE}.log"; }
-check() { ping -q -w 5 1.1.1.1 || return 1 && return 0; }
-log "Wait some time and boot up"; sleep 10;
-# Enable BBR to improve network performance
-sysctl net.core.default_qdisc=fq
-sysctl net.ipv4.tcp_congestion_control=bbr
-# Configure NordVPN
+# Set instructions:
+# - to start vpn
+VPN_UP="
+log \"Configure VPN\"
 nordvpn whitelist remove all
-$(for port in ${ADDITIONAL_PORTS}
-  do echo "nordvpn whitelist add port ${port}"
+$(for port in ${PORTS[*]}; do
+  echo "nordvpn whitelist add port ${port}"
 done)
-nordvpn whitelist add port ${API_PORT}
-nordvpn whitelist add port ${KEYS_PORT}
 nordvpn whitelist add subnet ${CIDR}
 nordvpn set autoconnect on
 nordvpn set killswitch on
 nordvpn set dns 1.1.1.1
 nordvpn set technology NordLynx
-log "Run NordVPN"; ${vpn} || exit 1
+log \"Connect VPN\"
+${vpn} || exit 1"
+# - to repair vpn
+VPN_REPAIR="
+  log \"Connection lost. Try to reconnect NordVPN\"
+    timeout 10s bash -c \"${vpn}\" &&
+    log \"NordVPN has successfully reconnected\" &&
+    continue
+  log \"Try to restart NordVPN's services\"
+    timeout 30s systemctl restart nordvpn.service &&
+    timeout 30s systemctl restart nordvpnd.service &&
+    log \"The services have successfully restarted\" &&
+    continue"
+
+# Extend the guide
+GUIDE+="$(info "NordVPN has been successfully configured:")\n"
+GUIDE+="$(info "- prior country or group:" "${prior:-none}")\n"
+GUIDE+="$(info "- open ports:" "${PORTS[*]}")\n\n"
+GUIDE+="$(info "Please, run the following commands:")\n"
+GUIDE+="$(info "1) Log you in NordVPN:" "nordvpn login")\n"
+GUIDE+="$(info "2) Restart the server:" "reboot")\n\n"
+
+############################
+###   Internal scripts   ###
+############################
+
+# Create a task on startup
+cat >"${ROOT}/bin/up-vpn.sh" <<EOL
+#!/bin/sh
+export PATH=${PATH}
+log() { echo "\$(date) - \${1}" >> "/var/log/${TITLE}.log"; }
+check() { ping -q -w 5 1.1.1.1 || return 1; }
+log "Wait some time and boot up"; sleep 10;
+# Enable BBR to improve network performance
+sysctl net.core.default_qdisc=fq
+sysctl net.ipv4.tcp_congestion_control=bbr
+# Start VPN ${VPN_UP}${VPN_READY:-}
 # Configure routing
 ip rule add from ${IP} table 128
 ip route add table 128 to ${CIDR} dev ${DEV}
@@ -82,37 +180,21 @@ ip route add table 128 default via ${GW}
 # Check health
 while :
 do
-  # Check connection twice
+  # Check the connection twice
   sleep 10; check || check && continue
-  log "Lost connection"
-  log "Try to reconnect NordVPN";
-    timeout 10s bash -c "${vpn}" &&
-    log "NordVPN has successfully reconnected" &&
-    continue
-  log "Try to restart NordVPN's services";
-    timeout 30s systemctl restart nordvpn.service &&
-    timeout 30s systemctl restart nordvpnd.service &&
-    log "The services have successfully restarted" &&
-    continue
+  # Try to repair VPN ${VPN_REPAIR}
   log "Reboot the server"; reboot --force
 done
 EOL
 chmod +x "${ROOT}/bin/up-vpn.sh"
 echo "@reboot sh ${ROOT}/bin/up-vpn.sh >/dev/null 2>&1" | crontab -
 
-# Create a task to uninstall this tool
-cat >"${ROOT}/bin/uninstall.sh" <<EOL
+# Create a task to remove this tool
+cat >"${ROOT}/bin/remove.sh" <<EOL
 #!/bin/sh
-export PATH=$PATH
+export PATH=${PATH}
 log() { echo "\$(date) - \${1}" >> "/var/log/${TITLE}.log"; }
-log "Remove NordVPN";
-  nordvpn disconnect
-  nordvpn logout
-  apt remove nordvpn -y
-log "Remove Outline";
-  docker rm --force shadowbox watchtower
-  docker system prune --force --all
-  rm --recursive --force /opt/outline
+log "Remove requirements";${REMOVE_ALL}
 log "Restore routing";
   ip rule del table 128
   ip route flush table 128
@@ -120,23 +202,23 @@ log "Remove this tool";
   crontab -l | grep --invert-match "${TITLE}" | crontab -
   rm --recursive --force "${ROOT}"
 EOL
-chmod +x "${ROOT}/bin/uninstall.sh"
+chmod +x "${ROOT}/bin/remove.sh"
 
-# TODO: Remove after fixing the bug of NordVPN 3.11.0–3.12.0
+# TODO: Remove this block after fixing the bug of NordVPN 3.11.0–3.12.0
 #  (https://nordvpn.com/ru/blog/nordvpn-linux-release-notes/)
 # Create a temporary task to fix freezing of NordVPN
 # (approximately, each 2 hours 10 minutes). Details,
 # reasons and solutions can be found here:
-# - https://forum.manjaro.org/t/nordvpn-bin-breaks-every-4-hours/80927/32
-# - https://aur.archlinux.org/packages/nordvpn-bin
-# Commands to uninstall the temporary task:
+# - https://forum.manjaro.org/t/nordvpn-bin-breaks-every-4-hours/80927
+# - https://aur.archlinux.org/packages/nordvpn-bin#comment-829416
+# Commands to remove the temporary task:
 #   rm /opt/vpn-behind-outline/bin/fix-vpn.sh
 #   echo "@reboot sh /opt/vpn-behind-outline/bin/up-vpn.sh >/dev/null 2>&1" | crontab -
 cat >"${ROOT}/bin/fix-vpn.sh" <<EOL
 #!/bin/sh
-export PATH=$PATH
+export PATH=${PATH}
 log() { echo "\$(date) - \${1}" >> "/var/log/${TITLE}.log"; }
-log "Recreate connection"; ${vpn}
+log "Re-create connection"; ${vpn}
 EOL
 chmod +x "${ROOT}/bin/fix-vpn.sh"
 crontab -l | {
@@ -145,20 +227,4 @@ crontab -l | {
 } | crontab -
 
 # Notify about following actions
-clear -x
-info "\nInterface ${DEV} was detected as default:"
-info "- ip:" "${IP}"
-info "- gateway:" "${GW}"
-info "- CIDR:" "${CIDR}"
-info "\nNordVPN behind Outline has been successfully configured:"
-info "- prior country or group:" "${choice:-none}"
-info "- management port:" "${API_PORT} (TCP)"
-info "- access key port:" "${KEYS_PORT} (TCP and UDP)"
-info "- additional ports:" "${ADDITIONAL_PORTS}"
-info "\nPlease, do the following:"
-api=$(grep "apiUrl" "/opt/outline/access.txt" | sed "s/apiUrl://")
-cert=$(grep "certSha256" "/opt/outline/access.txt" | sed "s/certSha256://")
-secret="{\"apiUrl\":\"${api}\",\"certSha256\":\"${cert}\"}"
-info "1) Configure Outline Manager with the following string:" "${secret}"
-info "2) Run a command to log you in NordVPN:" "nordvpn login"
-info "3) Run a command to restart the server:" "reboot"
+clear -x && info "NordVPN Gateway\n\n" && echo -e ${GUIDE}
