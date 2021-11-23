@@ -42,6 +42,15 @@ docker ps | grep shadowbox >/dev/null ||
     --api-port="${API_PORT}" \
     --keys-port="${KEYS_PORT}"
 
+# Let choose a country or group as prior
+clear -x
+info "\nNordVPN can connect to specific country or group"
+echo -e "\nAvailable countries:" && nordvpn countries | xargs
+echo -e "\nAvailable groups:" && nordvpn groups | xargs
+echo -e "\nSpecify name if needed and press Enter:"
+read -r choice && vpn="nordvpn connect"
+test -z "${choice}" || vpn="${vpn} ${choice} || ${vpn}"
+
 # Create a task on startup
 cat >"${ROOT}/bin/up-vpn.sh" <<EOL
 #!/bin/sh
@@ -64,7 +73,7 @@ nordvpn set autoconnect on
 nordvpn set killswitch on
 nordvpn set dns 1.1.1.1
 nordvpn set technology NordLynx
-log "Run NordVPN"; nordvpn connect || exit 1
+log "Run NordVPN"; ${vpn} || exit 1
 # Configure routing
 ip rule add from ${IP} table 128
 ip route add table 128 to ${CIDR} dev ${DEV}
@@ -76,7 +85,7 @@ do
   sleep 10; check || check && continue
   log "Lost connection"
   log "Try to reconnect NordVPN";
-    timeout 10s nordvpn connect &&
+    timeout 10s bash -c "${vpn}" &&
     log "NordVPN has successfully reconnected" &&
     continue
   log "Try to restart NordVPN's services";
@@ -126,7 +135,7 @@ cat >"${ROOT}/bin/fix-vpn.sh" <<EOL
 #!/bin/sh
 export PATH=$PATH
 log() { echo "\$(date) - \${1}" >> "/var/log/${TITLE}.log"; }
-log "Recreate connection"; nordvpn connect
+log "Recreate connection"; ${vpn}
 EOL
 chmod +x "${ROOT}/bin/fix-vpn.sh"
 crontab -l | {
@@ -141,6 +150,7 @@ info "- ip:" "${IP}"
 info "- gateway:" "${GW}"
 info "- CIDR:" "${CIDR}"
 info "\nNordVPN behind Outline has been successfully configured:"
+info "- prior country or group:" "${choice:-none}"
 info "- management port:" "${API_PORT} (TCP)"
 info "- access key port:" "${KEYS_PORT} (TCP and UDP)"
 info "- additional ports:" "${ADDITIONAL_PORTS}"

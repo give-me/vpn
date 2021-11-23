@@ -23,15 +23,15 @@ behind [Outline](https://getoutline.org/). Just create a gateway by using this t
 
 4. Configure the server by one of the following commands and follow further instructions:
 
-   ```curl -sSL https://github.com/give-me/vpn/raw/master/install.sh | bash``` to access by a default ip-address
+   ```bash -c "$(curl -sSL https://github.com/give-me/vpn/raw/master/install.sh)"``` to access by a default ip-address
 
    or
 
-   ```curl -sSL https://github.com/give-me/vpn/raw/master/install.sh | bash -s -- 1.2.3.4``` – by a custom ip-address
+   ```bash -c "$(curl -sSL https://github.com/give-me/vpn/raw/master/install.sh)" -- 1.2.3.4``` – by a custom ip-address
 
    or
 
-   ```curl -sSL https://github.com/give-me/vpn/raw/master/install.sh | bash -s -- example.com``` – by a domain name
+   ```bash -c "$(curl -sSL https://github.com/give-me/vpn/raw/master/install.sh)" -- example.com``` – by a domain name
 
 In order to update this tool to the latest version, just repeat the second and fourth steps of this guide. Later, you
 can find open ports by running ```ss --processes --listening --tcp``` if you have forgotten them.
