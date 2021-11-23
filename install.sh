@@ -5,6 +5,7 @@ set -o pipefail
 set -o nounset
 
 info() { echo -e "\033[32m${1} \033[1;32m${2-}\033[0m"; }
+test $EUID -ne 0 && info "You are not root" && exit 1
 
 # Set a title and make a root directory
 TITLE="vpn-behind-outline"
