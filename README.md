@@ -1,8 +1,9 @@
-# NordVPN behind Outline
+# NordVPN Gateway
 
 If you cannot access [NordVPN](https://nordvpn.com/) directly or do not have stable connection, but you do love their
 great protection including hiding your IP address and other cool features, you can place NordVPN connection
-behind [Outline](https://getoutline.org/). Just create a gateway by using this tool on your server!
+behind [Outline](https://getoutline.org/) and/or [Cloudflare for Teams](https://www.cloudflare.com/teams/). Just create
+a gateway by using this tool on your server!
 
 ## Usage
 
@@ -10,10 +11,12 @@ behind [Outline](https://getoutline.org/). Just create a gateway by using this t
 
 1. Make some preparations:
     1. Buy a subscription for [NordVPN](https://nordvpn.com/).
-    1. Install Outline Manager in order to have a possibility to generate and manage keys. Install Outline Client App in
-       order to have a possibility to connect your devices to a server that you will create later. Links to download the
-       Outline Manager and Outline Client App [can be found here](https://getoutline.org/).
-    1. Create a new server based on Ubuntu using [DigitalOcean](https://digitalocean.com/) or another similar service.
+    3. Optionally, install Outline Manager in order to have a possibility to generate and manage keys. Install Outline
+       Client App in order to have a possibility to connect your devices to a server that you will create later. Links
+       to download the Outline Manager and Outline Client App [can be found here](https://getoutline.org/).
+    2. Optionally, get a free account for [Cloudflare for Teams](https://www.cloudflare.com/teams/) in order to use your
+       server as a gateway.
+    4. Create a new server based on Ubuntu using [DigitalOcean](https://digitalocean.com/) or another similar service.
 
 2. Connect to the server via SSH and log in as root if needed:
 

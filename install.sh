@@ -98,6 +98,60 @@ if confirm "Should this server be accessible via Outline VPN?"; then
   GUIDE+="$(info "2) Configure Outline Manager with the following string:" "${secret}")\n\n"
 else eval "${remove}"; fi
 
+# Make and append instructions to remove
+clear -x && remove="
+  # Cloudflare for Teams
+  which cloudflared >/dev/null && {
+    cloudflared tunnel list --name ${TITLE} 2>/dev/null | grep ${TITLE} >/dev/null && {
+      cloudflared tunnel route ip delete 0.0.0.0/0
+      cloudflared tunnel delete --force ${TITLE}
+    }; apt remove cloudflared -y
+  }
+  rm --force ${ROOT}/cloudflared.yml" && REMOVE_ALL+="${remove}"
+if confirm "Should this server be used as a gateway for Cloudflare for Teams?"; then
+  # Install Cloudflare client
+  which cloudflared >/dev/null || {
+    arch=$(dpkg --print-architecture) && deb="$(mktemp)"
+    url="https://github.com/cloudflare/cloudflared/releases"
+    url+="/latest/download/cloudflared-linux-${arch}.deb"
+    wget --quiet --output-document="${deb}" "${url}" && dpkg -i "${deb}"
+  } || error "A package \"cloudflared\" cannot be installed"
+  # Log in to Cloudflare
+  cloudflared tunnel login
+  # Delete a tunnel if its certificate missed
+  cloudflared tunnel list --name "${TITLE}" | grep "${TITLE}" >/dev/null && {
+    info "Found the tunnel \"${TITLE}\" at Cloudflare for Teams\n"
+    tunnel=$(cloudflared tunnel list --name "${TITLE}" --output yaml)
+    tunnel=$(echo -e "${tunnel}" | head -n 1 | awk '{print $3}')
+    info "Its ID is \"${tunnel}\"\n"
+    test -e "/root/.cloudflared/${tunnel}.json" || {
+      info "Delete the tunnel because its certificate missed\n"
+      cloudflared tunnel route ip delete 0.0.0.0/0
+      cloudflared tunnel delete --force ${TITLE}
+    }
+  }
+  # Create a tunnel if absent
+  cloudflared tunnel list --name "${TITLE}" | grep "${TITLE}" >/dev/null || {
+    info "Create a new tunnel to have a certificate\n"
+    cloudflared tunnel create "${TITLE}"
+  }
+  # Add routing if absent
+  cloudflared tunnel route ip show | grep 0.0.0.0/0 | grep "${TITLE}" >/dev/null || {
+    info "Add routing to the tunnel for all the traffic\n"
+    cloudflared tunnel route ip add 0.0.0.0/0 "${TITLE}"
+  }
+  # Create a config
+  config="tunnel: ${TITLE}\n"
+  config+="warp-routing:\n  enabled: true"
+  echo -e "${config}" >"${ROOT}/cloudflared.yml"
+  # Set instructions
+  VPN_READY+="; cloudflared tunnel --config ${ROOT}/cloudflared.yml run --force &"
+  # Extend the guide
+  GUIDE+="$(info "In order to access via Cloudflare for Teams, do the following:")\n"
+  GUIDE+="$(info "1) Download Cloudflare WARP client")\n"
+  GUIDE+="$(info "2) Log users in to your Team")\n\n"
+else eval "${remove}"; fi
+
 ###################################
 ###   VPN preventing IP leaks   ###
 ###################################
