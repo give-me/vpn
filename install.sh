@@ -19,7 +19,7 @@ style() {
   test -z "${3-}" || msg+=" $(tput bold)${3}"
   echo -e -n "${msg}$(tput sgr0)"
 }
-function ask() { style 3 "${1} "; }
+function ask() { style 6 "${1} "; }
 function info() { style 2 "${1}" "${2-}"; }
 function error() { style 1 "${1}" "${2-}" && exit 1; }
 function prompt() { while :; do
@@ -275,8 +275,8 @@ chmod +x "${ROOT}/bin/remove.sh"
 # - https://forum.manjaro.org/t/nordvpn-bin-breaks-every-4-hours/80927
 # - https://aur.archlinux.org/packages/nordvpn-bin#comment-829416
 # Commands to remove the temporary task:
-#   rm /opt/vpn-behind-outline/bin/fix-vpn.sh
-#   echo "@reboot sh /opt/vpn-behind-outline/bin/up-vpn.sh >/dev/null 2>&1" | crontab -
+#   rm /opt/vpn-gateway/bin/fix-vpn.sh
+#   echo "@reboot sh /opt/vpn-gateway/bin/up-vpn.sh >/dev/null 2>&1" | crontab -
 #
 ###################
 ###   Old way   ###
