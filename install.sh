@@ -70,7 +70,7 @@ clear -x && remove="
 if confirm "Should this server be accessible via Outline VPN?"; then
   # Install Docker
   which docker >/dev/null || curl -sSL https://get.docker.com/ | sh
-  # Get or generate random numbers of public ports for Outline
+  # Get or generate random numbers of public ports for Outline VPN
   test -f "${ROOT}/outline" || {
     ports="api_port=$((1024 + RANDOM + (RANDOM % 2) * 30000))\n"
     ports+="keys_port=$((1024 + RANDOM + (RANDOM % 2) * 30000))"
@@ -79,6 +79,7 @@ if confirm "Should this server be accessible via Outline VPN?"; then
   # Get a custom host if it is a new installation
   hostname="$IP" && config="/opt/outline/access.txt"
   test -f ${config} || {
+    info "Ensure that ports ${api_port} (TCP) and ${keys_port} (TCP and UDP) are open\n"
     confirm "Would you like to access Outline VPN by IP ${IP}?" ||
       { prompt "Specify another IP or a domain name" && hostname="${REPLY}"; }
   }
