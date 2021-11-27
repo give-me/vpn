@@ -268,17 +268,26 @@ chmod +x "${ROOT}/bin/remove.sh"
 # Commands to remove the temporary task:
 #   rm /opt/vpn-behind-outline/bin/fix-vpn.sh
 #   echo "@reboot sh /opt/vpn-behind-outline/bin/up-vpn.sh >/dev/null 2>&1" | crontab -
-cat >"${ROOT}/bin/fix-vpn.sh" <<EOL
-#!/bin/sh
-export PATH=${PATH}
-log() { echo "\$(date) - \${1}" >> "/var/log/${TITLE}.log"; }
-log "Re-create connection"; ${vpn}
-EOL
-chmod +x "${ROOT}/bin/fix-vpn.sh"
-crontab -l | {
-  cat
-  echo "0 */2 * * * sh ${ROOT}/bin/fix-vpn.sh >/dev/null 2>&1"
-} | crontab -
+#
+###################
+###   Old way   ###
+###################
+#cat >"${ROOT}/bin/fix-vpn.sh" <<EOL
+##!/bin/sh
+#export PATH=${PATH}
+#log() { echo "\$(date) - \${1}" >> "/var/log/${TITLE}.log"; }
+#log "Re-create connection"; ${vpn}
+#EOL
+#chmod +x "${ROOT}/bin/fix-vpn.sh"
+#crontab -l | {
+#  cat
+#  echo "0 */2 * * * sh ${ROOT}/bin/fix-vpn.sh >/dev/null 2>&1"
+#} | crontab -
+#
+###################
+###   New way   ###
+###################
+apt install wireguard-tools -y
 
 # Notify about following actions
 clear -x && info "NordVPN Gateway\n\n" && echo -e ${GUIDE}
