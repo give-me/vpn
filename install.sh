@@ -171,11 +171,21 @@ which nordvpn >/dev/null || curl -sSL https://downloads.nordcdn.com/apps/linux/i
 # Let choose a country or group as prior
 clear -x && vpn="nordvpn connect"
 confirm "Do you allow NordVPN to choose a server's country or group?" || {
-  info "Available countries:\n" && nordvpn countries | xargs
-  info "Available groups:\n" && nordvpn groups | xargs
+  info "Available countries:\n" && nordvpn countries
+  info "Available groups:\n" && nordvpn groups
   prompt "Specify a country or group" && prior="${REPLY}"
   vpn="${vpn} ${prior} || ${vpn}"
 }
+
+# Log in to NordVPN
+while ! nordvpn account >/dev/null; do
+  nordvpn login --nordaccount
+  info "Please, do the following:\n"
+  info "1) Log you in a browser by the url specified above\n"
+  info "2) Copy a resulting url of the link named \"Return to the app\"\n"
+  info "3) Past the resulting url below (it's similar to \"nordvpn://...\")\n"
+  prompt "Specify the resulting url" && nordvpn login --callback "${REPLY}" || echo
+done
 
 # Set instructions:
 # - to start vpn
@@ -208,9 +218,7 @@ VPN_REPAIR="
 GUIDE+="$(info "NordVPN has been successfully configured:")\n"
 GUIDE+="$(info "- prior country or group:" "${prior:-none}")\n"
 GUIDE+="$(info "- open ports:" "${PORTS[*]}")\n\n"
-GUIDE+="$(info "Please, run the following commands:")\n"
-GUIDE+="$(info "1) Log you in NordVPN:" "nordvpn login")\n"
-GUIDE+="$(info "2) Restart the server:" "reboot")\n\n"
+GUIDE+="$(info "Now restart the server to up the gateway")\n"
 
 ############################
 ###   Internal scripts   ###
