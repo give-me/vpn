@@ -1,17 +1,22 @@
-# NordVPN behind Outline
+# NordVPN Gateway
 
 If you cannot access [NordVPN](https://nordvpn.com/) directly or do not have stable connection, but you do love their
 great protection including hiding your IP address and other cool features, you can place NordVPN connection
-behind [Outline](https://getoutline.org/). Just create a gateway by using this tool on your server!
+behind [Outline](https://getoutline.org/) and/or [Cloudflare for Teams](https://www.cloudflare.com/teams/). Just create
+a gateway by using this tool on your server!
 
 ## Usage
 
+### Install
+
 1. Make some preparations:
     1. Buy a subscription for [NordVPN](https://nordvpn.com/).
-    1. Install Outline Manager in order to have a possibility to generate and manage keys. Install Outline Client App in
-       order to have a possibility to connect your devices to a server that you will create later. Links to download the
-       Outline Manager and Outline Client App [can be found here](https://getoutline.org/).
-    1. Create a new server based on Ubuntu using [DigitalOcean](https://digitalocean.com/) or another similar service.
+    3. Optionally, install Outline Manager in order to have a possibility to generate and manage keys. Install Outline
+       Client App in order to have a possibility to connect your devices to a server that you will create later. Links
+       to download the Outline Manager and Outline Client App [can be found here](https://getoutline.org/).
+    2. Optionally, get a free account for [Cloudflare for Teams](https://www.cloudflare.com/teams/) in order to use your
+       server as a gateway.
+    4. Create a new server based on Ubuntu using [DigitalOcean](https://digitalocean.com/) or another similar service.
 
 2. Connect to the server via SSH and log in as root if needed:
 
@@ -21,23 +26,18 @@ behind [Outline](https://getoutline.org/). Just create a gateway by using this t
 
    ```apt update && apt upgrade -y```
 
-4. Configure the server by one of the following commands and follow further instructions:
+4. Configure the server and follow further instructions:
 
-   ```curl -sSL https://github.com/give-me/vpn/raw/master/install.sh | bash``` to access by a default ip-address
+   ```bash -c "$(curl -sSL https://github.com/give-me/vpn/raw/master/install.sh)"```
 
-   or
+Later, you can find open ports by running ```ss --processes --listening --tcp``` if you have forgotten them. In order to
+change configuration, just repeat the second and fourth steps of this guide.
 
-   ```curl -sSL https://github.com/give-me/vpn/raw/master/install.sh | bash -s -- 1.2.3.4``` – by a custom ip-address
+### Update
 
-   or
+In order to update this tool to the latest version, just repeat the second and fourth steps of this guide.
 
-   ```curl -sSL https://github.com/give-me/vpn/raw/master/install.sh | bash -s -- example.com``` – by a domain name
+### Uninstall
 
-In order to update this tool to the latest version, just repeat the second and fourth steps of this guide. Later, you
-can find open ports by running ```ss --processes --listening --tcp``` if you have forgotten them.
-
-In order close or open additional ports, just edit their numbers by running ```nano /opt/vpn-behind-outline/ports``` as
-root, whereupon repeat the second and fourth steps of this guide.
-
-In order to uninstall this tool, just run ```/opt/vpn-behind-outline/bin/uninstall.sh``` as root (do not forget to
-disconnect VPN to keep a connection via SSH to the server after uninstalling this tool).
+In order to uninstall this tool, just run ```/opt/vpn-gateway/bin/remove.sh``` as root (do not forget to disconnect VPN
+to keep a connection via SSH to the server after uninstalling this tool).
