@@ -39,5 +39,5 @@ In order to update this tool to the latest version, just repeat the second and f
 
 ### Uninstall
 
-In order to uninstall this tool, just run ```/opt/vpn-behind-outline/bin/remove.sh``` as root (do not forget to
-disconnect VPN to keep a connection via SSH to the server after uninstalling this tool).
+In order to uninstall this tool, just run ```/opt/vpn-gateway/bin/remove.sh``` as root (do not forget to disconnect VPN
+to keep a connection via SSH to the server after uninstalling this tool).
