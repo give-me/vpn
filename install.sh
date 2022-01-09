@@ -6,147 +6,232 @@ set -o nounset
 
 TITLE="vpn-gateway"
 ROOT="/opt/${TITLE}"
-PORTS=(22)
+TCP_PORTS=(22) # TCP only
+ALL_PORTS=()   # TCP and UDP
 declare GUIDE
 declare VPN_UP
 declare VPN_READY
 declare VPN_REPAIR
 declare REMOVE_ALL
 
-# Color messages and dialogs
-style() {
+#############################
+###   Helping functions   ###
+#############################
+
+#---------------------
+# Messages and dialogs
+#---------------------
+
+function style() {
   msg="$(tput setaf "${1}")${2}"
   test -z "${3-}" || msg+=" $(tput bold)${3}"
   echo -e -n "${msg}$(tput sgr0)"
 }
-function ask() { style 6 "${1} "; }
-function info() { style 2 "${1}" "${2-}"; }
-function error() { style 1 "${1}" "${2-}" && exit 1; }
-function prompt() { while :; do
-  ask "${1} [and press Enter]:" && read -r
-  test -z "${REPLY}" || return 0
-done; }
-function confirm() { while :; do
-  ask "${1} [Y/N]" && read -r -s -n 1
-  [[ "${REPLY}" =~ ^y|Y$ ]] && echo && return 0
-  [[ "${REPLY}" =~ ^n|N$ ]] && echo && return 1
-  style 31 "wrong answer" && echo
-done; }
 
-# Check root permissions
-test $EUID -ne 0 && error "You are not root"
+function ask() {
+  style 6 "${1} "
+}
 
-# Make a root directory
-mkdir --parents "${ROOT}/bin"
+function info() {
+  style 2 "${1}" "${2-}"
+}
 
+function error() {
+  style 1 "${1}" "${2-}"
+  exit 1
+}
+
+function prompt() {
+  while :; do
+    ask "${1} [and press Enter]:"
+    read -r
+    test -z "${REPLY}" || return 0
+  done
+}
+
+function confirm() {
+  while :; do
+    ask "${1} [Y/N]"
+    read -r -s -n 1
+    [[ "${REPLY}" =~ ^y|Y$ ]] && echo && return 0
+    [[ "${REPLY}" =~ ^n|N$ ]] && echo && return 1
+    style 1 "${REPLY} is a wrong answer\n"
+  done
+}
+
+#---------------------
+#   Other functions  |
+#---------------------
+
+function command_exists {
+  command -v "$@" &>/dev/null
+}
+
+function install_docker() {
+  if ! command_exists docker; then
+    curl -sSL https://get.docker.com/ | sh
+  fi
+}
+
+function generate_port() {
+  echo $((1024 + RANDOM + (RANDOM % 2) * 30000))
+}
+
+################################
+###   Setting up this tool   ###
+################################
+
+#--------------------
+# Checks and analysis
+#--------------------
+
+# Check permissions
+test $EUID -eq 0 || error "This tool should be executed by root only"
 # Get details of a main interface
 DEV=$(ip route show default | awk '{print $5}')
 GW=$(ip route show default | awk '{print $3}')
-IP=$(ip route get "${GW}" | awk '{print $5}')
-CIDR=$(ip route | grep / | grep "${IP}" | awk '{print $1}')
-
+IP=$(ip -oneline route get '1.1.1.1' oif "${DEV}" | awk '{print $7}')
+CIDR=$(ip route show proto kernel | grep "${IP}" | awk '{print $1}')
 # Extend the guide
 GUIDE+="$(info "Interface ${DEV} was detected as default:")\n"
-GUIDE+="$(info "- ip:" "${IP}")\n"
-GUIDE+="$(info "- gateway:" "${GW}")\n"
-GUIDE+="$(info "- CIDR:" "${CIDR}")\n\n"
+GUIDE+="$(info "- IP:" "${IP}")\n"
+GUIDE+="$(info "- CIDR:" "${CIDR}")\n"
+GUIDE+="$(info "- Gateway:" "${GW}")\n\n"
 
-# Additional parameters
-clear -x && confirm "Would you like to open HTTP and HTTPS ports?" && PORTS+=(80 443)
+#----------------------
+# Preparing file system
+#----------------------
+
+mkdir --parents ${ROOT}/{bin,settings,configs}
+
+############################
+###   General settings   ###
+############################
+
+#---------------------------
+# Public IP or a domain name
+#---------------------------
+
+clear -x
+info "The following IP was found for the interface ${DEV}:" "${IP}\n"
+if confirm "Should a domain or another IP be used to access this server?"; then
+  prompt "Specify a domain or IP instead of ${IP}"
+  PUBLIC="${REPLY}"
+else PUBLIC="${IP}"; fi
+
+#---------------------------
+# Most useful ports to allow
+#---------------------------
+
+clear -x
+if confirm "Should ports for HTTP and HTTPS be allowed?"; then
+  TCP_PORTS+=(80 443)
+fi
 
 ##########################################
 ###   Channels to connect the server   ###
 ##########################################
 
-# Make and append instructions to remove
-clear -x && remove="
+#------------
+# Outline VPN
+#------------
+
+remove="
   # Outline VPN
-  which docker >/dev/null && {
-    docker rm --force shadowbox watchtower 2>/dev/null
-    docker system prune --force --all
-  }
+  command -v docker &>/dev/null && docker rm --force shadowbox watchtower 2>/dev/null
   rm --recursive --force /opt/outline
-  rm --force ${ROOT}/outline" && REMOVE_ALL+="${remove}"
+  rm --force ${ROOT}/settings/outline"
+REMOVE_ALL+="${remove}"
+clear -x
 if confirm "Should this server be accessible via Outline VPN?"; then
-  # Install Docker
-  which docker >/dev/null || curl -sSL https://get.docker.com/ | sh
-  # Get or generate random numbers of public ports for Outline VPN
-  test -f "${ROOT}/outline" || {
-    ports="api_port=$((1024 + RANDOM + (RANDOM % 2) * 30000))\n"
-    ports+="keys_port=$((1024 + RANDOM + (RANDOM % 2) * 30000))"
-    echo -e "${ports}" >"${ROOT}/outline"
-  } && source "${ROOT}/outline" && PORTS+=("${api_port}" "${keys_port}")
-  # Get a custom host if it is a new installation
-  hostname="$IP" && config="/opt/outline/access.txt"
-  test -f ${config} || {
-    info "Ensure that ports ${api_port} (TCP) and ${keys_port} (TCP and UDP) are open\n"
-    confirm "Would you like to access Outline VPN by IP ${IP}?" ||
-      { prompt "Specify another IP or a domain name" && hostname="${REPLY}"; }
-  }
+  install_docker
+  # Generate missing numbers of public ports and load the numbers
+  if [ ! -f "${ROOT}/settings/outline" ]; then
+    settings="outline_api_port=$(generate_port)\n"
+    settings+="outline_keys_port=$(generate_port)"
+    echo -e "${settings}" >"${ROOT}/settings/outline"
+  fi
+  source "${ROOT}/settings/outline"
+  TCP_PORTS+=("${outline_api_port}")
+  ALL_PORTS+=("${outline_keys_port}")
   # Install and run Outline VPN
   url="https://github.com/Jigsaw-Code/outline-server/raw/master"
   url+="/src/server_manager/install_scripts/install_server.sh"
   docker ps | grep shadowbox >/dev/null || bash -c "$(curl -sSL ${url})" -- \
-    --hostname="${hostname}" --api-port="${api_port}" --keys-port="${keys_port}"
-  # Extend the guide
-  api_url=$(grep "apiUrl" "${config}" | sed "s/apiUrl://")
-  cert_sha=$(grep "certSha256" "${config}" | sed "s/certSha256://")
-  secret="{\"apiUrl\":\"${api_url}\",\"certSha256\":\"${cert_sha}\"}"
-  GUIDE+="$(info "In order to access via Outline VPN, do the following:")\n"
-  GUIDE+="$(info "1) Ensure that ports are open:")\n"
-  GUIDE+="$(info "- management port:" "${api_port} (TCP)")\n"
-  GUIDE+="$(info "- access key port:" "${keys_port} (TCP and UDP)")\n"
-  GUIDE+="$(info "2) Configure Outline Manager with the following string:" "${secret}")\n\n"
+    --hostname="${PUBLIC}" \
+    --api-port="${outline_api_port}" \
+    --keys-port="${outline_keys_port}"
+  # Extend the guide if Outline VPN has been configured
+  secret="/opt/outline/access.txt"
+  api_url=$(grep "apiUrl" "${secret}" | sed "s/apiUrl://" || echo)
+  cert_sha=$(grep "certSha256" "${secret}" | sed "s/certSha256://" || echo)
+  details="{\"apiUrl\":\"${api_url}\",\"certSha256\":\"${cert_sha}\"}"
+  if [ "${api_url}" ] && [ "${cert_sha}" ]; then
+    GUIDE+="$(info "In order to access via Outline VPN, do the following:")\n"
+    GUIDE+="$(info "1) Ensure that ports are open:")\n"
+    GUIDE+="$(info "- management port:" "${outline_api_port} (TCP)")\n"
+    GUIDE+="$(info "- access key port:" "${outline_keys_port} (TCP and UDP)")\n"
+    GUIDE+="$(info "2) Configure Outline Manager with the following string:" "${details}")\n\n"
+  fi
 else eval "${remove}"; fi
 
-# Make and append instructions to remove
-clear -x && remove="
+#---------------------
+# Cloudflare for Teams
+#---------------------
+
+remove="
   # Cloudflare for Teams
-  which cloudflared >/dev/null && {
-    cloudflared tunnel list --name ${TITLE} 2>/dev/null | grep ${TITLE} >/dev/null && {
+  command -v cloudflared &>/dev/null && {
+    cloudflared tunnel list --name ${TITLE} 2>/dev/null | grep --quiet ${TITLE} && {
       cloudflared tunnel route ip delete 0.0.0.0/0
       cloudflared tunnel delete --force ${TITLE}
-    }; apt remove cloudflared -y
+    }
+    apt remove cloudflared -y
   }
-  rm --force ${ROOT}/cloudflared.yml" && REMOVE_ALL+="${remove}"
+  rm --force ${ROOT}/configs/cloudflared.yml"
+REMOVE_ALL+="${remove}"
+clear -x
 if confirm "Should this server be used as a gateway for Cloudflare for Teams?"; then
   # Install Cloudflare client
-  which cloudflared >/dev/null || {
+  if ! command_exists cloudflared; then
     arch=$(dpkg --print-architecture) && deb="$(mktemp)"
     url="https://github.com/cloudflare/cloudflared/releases"
     url+="/latest/download/cloudflared-linux-${arch}.deb"
-    wget --quiet --output-document="${deb}" "${url}" && dpkg -i "${deb}"
-  } || error "A package \"cloudflared\" cannot be installed"
+    wget --quiet --output-document="${deb}" "${url}"
+    if ! dpkg -i "${deb}"; then
+      error "A package \"cloudflared\" cannot be installed"
+    fi
+  fi
   # Log in to Cloudflare
   cloudflared tunnel login
-  # Delete a tunnel if its certificate missed
-  cloudflared tunnel list --name "${TITLE}" | grep "${TITLE}" >/dev/null && {
+  # Find and check a tunnel
+  if cloudflared tunnel list --name "${TITLE}" | grep --quiet "${TITLE}"; then
     info "Found the tunnel \"${TITLE}\" at Cloudflare for Teams\n"
     tunnel=$(cloudflared tunnel list --name "${TITLE}" --output yaml)
     tunnel=$(echo -e "${tunnel}" | head -n 1 | awk '{print $3}')
     info "Its ID is \"${tunnel}\"\n"
-    test -e "/root/.cloudflared/${tunnel}.json" || {
+    if [ ! -f "/root/.cloudflared/${tunnel}.json" ]; then
       info "Delete the tunnel because its certificate missed\n"
       cloudflared tunnel route ip delete 0.0.0.0/0
-      cloudflared tunnel delete --force ${TITLE}
-    }
-  }
+      cloudflared tunnel delete --force "${TITLE}"
+    fi
+  fi
   # Create a tunnel if absent
-  cloudflared tunnel list --name "${TITLE}" | grep "${TITLE}" >/dev/null || {
+  if ! cloudflared tunnel list --name "${TITLE}" | grep --quiet "${TITLE}"; then
     info "Create a new tunnel to have a certificate\n"
     cloudflared tunnel create "${TITLE}"
-  }
+  fi
   # Add routing if absent
-  cloudflared tunnel route ip show | grep 0.0.0.0/0 | grep "${TITLE}" >/dev/null || {
+  if ! cloudflared tunnel route ip show | grep 0.0.0.0/0 | grep --quiet "${TITLE}"; then
     info "Add routing to the tunnel for all the traffic\n"
     cloudflared tunnel route ip add 0.0.0.0/0 "${TITLE}"
-  }
+  fi
   # Create a config
   config="tunnel: ${TITLE}\n"
   config+="warp-routing:\n  enabled: true"
-  echo -e "${config}" >"${ROOT}/cloudflared.yml"
+  echo -e "${config}" >"${ROOT}/configs/cloudflared.yml"
   # Set instructions
-  VPN_READY+="; cloudflared tunnel --config ${ROOT}/cloudflared.yml run --force &"
+  VPN_READY+="; cloudflared tunnel --config ${ROOT}/configs/cloudflared.yml run --force &"
   # Extend the guide
   GUIDE+="$(info "In order to access via Cloudflare for Teams, do the following:")\n"
   GUIDE+="$(info "1) Download Cloudflare WARP client")\n"
@@ -157,28 +242,20 @@ else eval "${remove}"; fi
 ###   VPN preventing IP leaks   ###
 ###################################
 
-# Make and append instructions to remove
-clear -x && remove="
+remove="
   # NordVPN
-  which nordvpn >/dev/null && {
+  command -v nordvpn &>/dev/null && {
     nordvpn disconnect
     nordvpn logout
     apt remove nordvpn -y
-  }" && REMOVE_ALL+="${remove}"
-
+  }"
+REMOVE_ALL+="${remove}"
 # Install NordVPN
-which nordvpn >/dev/null || curl -sSL https://downloads.nordcdn.com/apps/linux/install.sh | sh
-
-# Let choose a country or group as prior
-clear -x && vpn="nordvpn connect"
-confirm "Do you allow NordVPN to choose a server's country or group?" || {
-  info "Available countries:\n" && nordvpn countries
-  info "Available groups:\n" && nordvpn groups
-  prompt "Specify a country or group" && prior="${REPLY}"
-  vpn="${vpn} ${prior} || ${vpn}"
-}
-
+if ! command_exists nordvpn; then
+  curl -sSL https://downloads.nordcdn.com/apps/linux/install.sh | sh
+fi
 # Log in to NordVPN
+clear -x
 while ! nordvpn account >/dev/null; do
   nordvpn login --nordaccount
   info "Please, do the following:\n"
@@ -187,13 +264,21 @@ while ! nordvpn account >/dev/null; do
   info "3) Past the resulting url below (it's similar to \"nordvpn://...\")\n"
   prompt "Specify the resulting url" && nordvpn login --callback "${REPLY}" || echo
 done
-
+# Let choose a country or group as prior
+vpn="nordvpn connect"
+clear -x
+if confirm "Do you like to force NordVPN to choose a specific country?"; then
+  info "Available countries:\n" && nordvpn countries
+  info "Available groups:\n" && nordvpn groups
+  prompt "Specify a country or group" && prior="${REPLY}"
+  vpn="${vpn} ${prior} || ${vpn}"
+fi
 # Set instructions:
 # - to start vpn
 VPN_UP="
 log \"Configure VPN\"
 nordvpn whitelist remove all
-$(for port in ${PORTS[*]}; do
+$(for port in ${TCP_PORTS[*]} ${ALL_PORTS[*]}; do
   echo "nordvpn whitelist add port ${port}"
 done)
 nordvpn whitelist add subnet ${CIDR}
@@ -218,7 +303,8 @@ VPN_REPAIR="
 # Extend the guide
 GUIDE+="$(info "NordVPN has been successfully configured:")\n"
 GUIDE+="$(info "- prior country or group:" "${prior:-none}")\n"
-GUIDE+="$(info "- open ports:" "${PORTS[*]}")\n\n"
+GUIDE+="$(info "- allowed TCP only ports:" "${TCP_PORTS[*]}")\n"
+GUIDE+="$(info "- allowed TCP and UDP ports:" "${ALL_PORTS[*]}")\n\n"
 GUIDE+="$(info "Now restart the server to up the gateway")\n"
 
 ############################
@@ -237,9 +323,9 @@ sysctl net.core.default_qdisc=fq
 sysctl net.ipv4.tcp_congestion_control=bbr
 # Start VPN ${VPN_UP}${VPN_READY:-}
 # Configure routing
-ip rule add from ${IP} table 128
-ip route add table 128 to ${CIDR} dev ${DEV}
-ip route add table 128 default via ${GW}
+ip rule add from ${IP} table 123
+ip route add table 123 to ${CIDR} dev ${DEV}
+ip route add table 123 default via ${GW}
 # Check health
 while :
 do
@@ -258,9 +344,10 @@ cat >"${ROOT}/bin/remove.sh" <<EOL
 export PATH=${PATH}
 log() { echo "\$(date) - \${1}" >> "/var/log/${TITLE}.log"; }
 log "Remove requirements";${REMOVE_ALL}
+  docker system prune --force --all
 log "Restore routing";
-  ip rule del table 128
-  ip route flush table 128
+  ip rule del table 123
+  ip route flush table 123
 log "Remove this tool";
   crontab -l | grep --invert-match "${TITLE}" | crontab -
   rm --recursive --force "${ROOT}"
