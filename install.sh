@@ -132,6 +132,45 @@ fi
 ###   Channels to connect the server   ###
 ##########################################
 
+#-----------------------
+# Standalone Shadowsocks
+#-----------------------
+
+remove="
+  # Shadowsocks
+  command -v docker &>/dev/null && docker rm --force shadowsocks 2>/dev/null
+  rm --force ${ROOT}/settings/shadowsocks
+  rm --force ${ROOT}/configs/shadowsocks.json"
+REMOVE_ALL+="${remove}"
+clear -x
+if confirm "Should this server be accessible via Shadowsocks?"; then
+  install_docker
+  # Generate missing settings and load the settings
+  if [ ! -f "${ROOT}/settings/shadowsocks" ]; then
+    settings="shadowsocks_secret='$(head -c 10 /dev/urandom | base64)'\n"
+    settings+="shadowsocks_port=$(generate_port)"
+    echo -e "${settings}" >"${ROOT}/settings/shadowsocks"
+  fi
+  source "${ROOT}/settings/shadowsocks"
+  ALL_PORTS+=("${shadowsocks_port}")
+  # Create a config
+  shadowsocks_method="chacha20-ietf-poly1305"
+  config="{ 'server': '0.0.0.0', 'server_port': ${shadowsocks_port},"
+  config+=" 'password': '${shadowsocks_secret}', 'method': '${shadowsocks_method}' }"
+  echo -e "${config}" >"${ROOT}/configs/shadowsocks.json"
+  # Stop and run a server
+  docker rm --force shadowsocks 2>/dev/null
+  docker run --detach --interactive --tty --restart always --net host --name shadowsocks \
+    --volume "${ROOT}/configs/shadowsocks.json:/etc/shadowsocks-rust/config.json" \
+    ghcr.io/shadowsocks/ssserver-rust:latest
+  # Extend the guide
+  details="${shadowsocks_method}:${shadowsocks_secret}@${PUBLIC}:${shadowsocks_port}"
+  shadowsocks_url="ss://$(echo -n "${details}" | base64 --wrap=0)#${TITLE}"
+  GUIDE+="$(info "In order to access via Shadowsocks, do the following:")\n"
+  GUIDE+="$(info "1) Ensure that the port is open:" "${shadowsocks_port} (TCP and UDP)")\n"
+  GUIDE+="$(info "2) Configure Outline Client with the following URL:" "${shadowsocks_url}")\n\n"
+else eval "${remove}"; fi
+
 #------------
 # Outline VPN
 #------------

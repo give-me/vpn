@@ -1,9 +1,9 @@
 # NordVPN Gateway
 
 If you cannot access [NordVPN](https://nordvpn.com/) directly or do not have a stable connection, but you do love their
-great protection including hiding your IP address and other cool features, you can place NordVPN connection
-behind [Outline](https://getoutline.org/) and/or [Cloudflare for Teams](https://www.cloudflare.com/teams/). Just turn
-your server into a gateway with this tool!
+great protection including hiding your IP address and other cool features, you can place NordVPN connection behind
+standalone [Shadowsocks](https://shadowsocks.org/), [Outline](https://getoutline.org/)
+and/or [Cloudflare for Teams](https://www.cloudflare.com/teams/). Just turn your server into a gateway with this tool!
 
 ## Usage
 
@@ -11,6 +11,7 @@ There are three channels that can be used individually or jointly to access the 
 
 | Channel              | Difficulty | Access control | Public access to a server  | Requirements                                                                                                                     |
 |----------------------|------------|----------------|----------------------------|----------------------------------------------------------------------------------------------------------------------------------|
+| Shadowsocks          | Low        | One shared key | Required by IP or a domain | Install [Outline Client App](https://getoutline.org/get-started/)                                                                |
 | Outline              | Normal     | Personal keys  | Required by IP or a domain | Install [Outline Manager and Outline Client App](https://getoutline.org/get-started/)                                            |
 | Cloudflare for Teams | High       | Advanced       | Not required               | Get a free account for [Cloudflare for Teams](https://www.cloudflare.com/teams/) and install [WARP Client App](https://1.1.1.1/) |
 
