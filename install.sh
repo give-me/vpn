@@ -67,6 +67,10 @@ function command_exists {
   command -v "$@" &>/dev/null
 }
 
+function package_exists {
+  dpkg -l | grep --quiet "$@"
+}
+
 function install_docker() {
   if ! command_exists docker; then
     curl -sSL https://get.docker.com/ | sh
@@ -293,6 +297,10 @@ REMOVE_ALL+="${remove}"
 if ! command_exists nordvpn; then
   curl -sSL https://downloads.nordcdn.com/apps/linux/install.sh | sh
 fi
+# Install an unmentioned dependency
+if ! package_exists wireguard-tools; then
+  apt install wireguard-tools -y
+fi
 # Log in to NordVPN
 clear -x
 while ! nordvpn account >/dev/null; do
@@ -392,37 +400,6 @@ log "Remove this tool";
   rm --recursive --force "${ROOT}"
 EOL
 chmod +x "${ROOT}/bin/remove.sh"
-
-# TODO: Remove this block after fixing the bug of NordVPN 3.11.0–3.12.0
-#  (https://nordvpn.com/ru/blog/nordvpn-linux-release-notes/)
-# Create a temporary task to fix freezing of NordVPN
-# (approximately, each 2 hours 10 minutes). Details,
-# reasons and solutions can be found here:
-# - https://forum.manjaro.org/t/nordvpn-bin-breaks-every-4-hours/80927
-# - https://aur.archlinux.org/packages/nordvpn-bin#comment-829416
-# Commands to remove the temporary task:
-#   rm /opt/vpn-gateway/bin/fix-vpn.sh
-#   echo "@reboot sh /opt/vpn-gateway/bin/up-vpn.sh >/dev/null 2>&1" | crontab -
-#
-###################
-###   Old way   ###
-###################
-#cat >"${ROOT}/bin/fix-vpn.sh" <<EOL
-##!/bin/sh
-#export PATH=${PATH}
-#log() { echo "\$(date) - \${1}" >> "/var/log/${TITLE}.log"; }
-#log "Re-create connection"; ${vpn}
-#EOL
-#chmod +x "${ROOT}/bin/fix-vpn.sh"
-#crontab -l | {
-#  cat
-#  echo "0 */2 * * * sh ${ROOT}/bin/fix-vpn.sh >/dev/null 2>&1"
-#} | crontab -
-#
-###################
-###   New way   ###
-###################
-apt install wireguard-tools -y
 
 # Notify about following actions
 clear -x && info "NordVPN Gateway\n\n" && echo -e ${GUIDE}
