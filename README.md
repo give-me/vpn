@@ -1,22 +1,26 @@
 # NordVPN Gateway
 
-If you cannot access [NordVPN](https://nordvpn.com/) directly or do not have stable connection, but you do love their
-great protection including hiding your IP address and other cool features, you can place NordVPN connection
-behind [Outline](https://getoutline.org/) and/or [Cloudflare for Teams](https://www.cloudflare.com/teams/). Just create
-a gateway by using this tool on your server!
+If you cannot access [NordVPN](https://nordvpn.com/) directly or do not have a stable connection, but you do love their
+great protection including hiding your IP address and other cool features, you can place NordVPN connection behind
+standalone [Shadowsocks](https://shadowsocks.org/), [Outline](https://getoutline.org/)
+and/or [Cloudflare for Teams](https://www.cloudflare.com/teams/). Just turn your server into a gateway with this tool!
 
 ## Usage
+
+There are three channels that can be used individually or jointly to access the gateway from your devices:
+
+| Channel              | Difficulty | Access control | Public access to a server  | Requirements                                                                                                                     |
+|----------------------|------------|----------------|----------------------------|----------------------------------------------------------------------------------------------------------------------------------|
+| Shadowsocks          | Low        | One shared key | Required by IP or a domain | Install [Outline Client App](https://getoutline.org/get-started/)                                                                |
+| Outline              | Normal     | Personal keys  | Required by IP or a domain | Install [Outline Manager and Outline Client App](https://getoutline.org/get-started/)                                            |
+| Cloudflare for Teams | High       | Advanced       | Not required               | Get a free account for [Cloudflare for Teams](https://www.cloudflare.com/teams/) and install [WARP Client App](https://1.1.1.1/) |
 
 ### Install
 
 1. Make some preparations:
     1. Buy a subscription for [NordVPN](https://nordvpn.com/).
-    3. Optionally, install Outline Manager in order to have a possibility to generate and manage keys. Install Outline
-       Client App in order to have a possibility to connect your devices to a server that you will create later. Links
-       to download the Outline Manager and Outline Client App [can be found here](https://getoutline.org/).
-    2. Optionally, get a free account for [Cloudflare for Teams](https://www.cloudflare.com/teams/) in order to use your
-       server as a gateway.
-    4. Create a new server based on Ubuntu using [DigitalOcean](https://digitalocean.com/) or another similar service.
+    2. Fulfill the requirements for one or several channels specified in the right column of the table above.
+    3. Create a new server based on Ubuntu using [DigitalOcean](https://digitalocean.com/) or another similar service.
 
 2. Connect to the server via SSH and log in as root if needed:
 
