@@ -164,7 +164,7 @@ if confirm "Should this server be accessible via Shadowsocks?"; then
   echo -e "${config}" >"${ROOT}/configs/shadowsocks.json"
   # Stop and run a server
   docker rm --force shadowsocks 2>/dev/null
-  docker run --detach --interactive --tty --restart always --net host --name shadowsocks \
+  docker run --detach --restart always --net host --name shadowsocks \
     --volume "${ROOT}/configs/shadowsocks.json:/etc/shadowsocks-rust/config.json" \
     ghcr.io/shadowsocks/ssserver-rust:latest
   # Extend the guide
@@ -200,7 +200,7 @@ if confirm "Should this server be accessible via Outline VPN?"; then
   # Install and run Outline VPN
   url="https://github.com/Jigsaw-Code/outline-server/raw/master"
   url+="/src/server_manager/install_scripts/install_server.sh"
-  docker ps | grep shadowbox >/dev/null || bash -c "$(curl -sSL ${url})" -- \
+  docker ps --all | grep shadowbox >/dev/null || bash -c "$(curl -sSL ${url})" -- \
     --hostname="${PUBLIC}" \
     --api-port="${outline_api_port}" \
     --keys-port="${outline_keys_port}"
