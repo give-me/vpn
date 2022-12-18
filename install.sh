@@ -309,12 +309,11 @@ fi
 # Log in to NordVPN
 clear -x
 while ! nordvpn account >/dev/null; do
-  nordvpn login --nordaccount
   info "Please, do the following:\n"
-  info "1) Log you in a browser by the url specified above\n"
-  info "2) Copy a resulting url of the link named \"Return to the app\"\n"
-  info "3) Past the resulting url below (it's similar to \"nordvpn://...\")\n"
-  prompt "Specify the resulting url" && nordvpn login --callback "${REPLY}" || echo
+  info "1) Log you in at https://my.nordaccount.com/dashboard/nordvpn/\n"
+  info "2) Find a section named \"Access token\"\n"
+  info "3) Generate new token and past the token below\n"
+  prompt "Specify the resulting url" && nordvpn login --token "${REPLY}" || echo
 done
 # Let choose a country or group as prior
 vpn="nordvpn connect"
