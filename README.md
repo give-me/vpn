@@ -15,6 +15,29 @@ There are three channels that can be used individually or jointly to access the 
 | Outline              | Normal     | Personal keys  | Required by IP or a domain | Install [Outline Manager and Outline Client App](https://getoutline.org/get-started/)                                            |
 | Cloudflare for Teams | High       | Advanced       | Not required               | Get a free account for [Cloudflare for Teams](https://www.cloudflare.com/teams/) and install [WARP Client App](https://1.1.1.1/) |
 
+Detailed scheme of traffic routing between your device and Internet for each of the channels is shown below:
+
+```mermaid
+flowchart LR;
+    Y --Shadowsocks--> SC --Shadowsocks--> VC
+    Y --Outline-->     OC --Outline-->     VC
+    Y --Cloudflare-->  CN --Cloudflare-->  VN --Cloudflare--> VC --Cloudflare--> CC --Cloudflare--> VC
+
+    VC --All the channels--> VN ---> I
+    
+    Y[Your device]
+    VN[NordVPN network]
+    CN[Cloudflare network]
+    I[Internet]
+
+    subgraph Your server
+    SC[Shadowsocks container]
+    OC[Outline container]
+    CC[Cloudflared container]
+    VC[NordVPN client]
+    end
+```
+
 You should not choose Outline as a channel during installation if your server has an ARM processor because vanilla
 Outline does not support ARM processors. Other channels work perfectly with ARM processors.
 
