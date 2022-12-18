@@ -10,8 +10,8 @@ TCP_PORTS=(22) # TCP only
 ALL_PORTS=()   # TCP and UDP
 declare GUIDE
 declare VPN_UP
-declare VPN_READY
 declare VPN_REPAIR
+declare REMOVE_REQUIREMENTS
 declare REMOVE_ALL
 
 #############################
@@ -222,29 +222,33 @@ else eval "${remove}"; fi
 # Cloudflare for Teams
 #---------------------
 
+src="${ROOT}/configs/cloudflared"
+dst="/home/nonroot/.cloudflared/"
+function cloudflared() {
+  docker run --rm \
+    --volume "${src}:${dst}" cloudflare/cloudflared:latest "$@"
+}
+function cloudflared_service() {
+  docker run --detach --name cloudflared --restart always \
+    --volume "${src}:${dst}" cloudflare/cloudflared:latest "$@"
+}
 remove="
   # Cloudflare for Teams
-  command -v cloudflared &>/dev/null && {
+  command -v docker &>/dev/null && docker ps --all | grep cloudflared >/dev/null &&
     cloudflared tunnel list --name ${TITLE} 2>/dev/null | grep --quiet ${TITLE} && {
       cloudflared tunnel route ip delete 0.0.0.0/0
       cloudflared tunnel delete --force ${TITLE}
     }
-    apt remove cloudflared -y
-  }
-  rm --force ${ROOT}/configs/cloudflared.yml"
+  command -v docker &>/dev/null && docker rm --force cloudflared 2>/dev/null
+  rm --recursive --force ${ROOT}/configs/cloudflared"
+REMOVE_REQUIREMENTS+="
+src=${src}
+dst=${dst}
+$(declare -f cloudflared)"
 REMOVE_ALL+="${remove}"
 clear -x
 if confirm "Should this server be used as a gateway for Cloudflare for Teams?"; then
-  # Install Cloudflare client
-  if ! command_exists cloudflared; then
-    arch=$(dpkg --print-architecture) && deb="$(mktemp)"
-    url="https://github.com/cloudflare/cloudflared/releases"
-    url+="/latest/download/cloudflared-linux-${arch}.deb"
-    wget --quiet --output-document="${deb}" "${url}"
-    if ! dpkg -i "${deb}"; then
-      error "A package \"cloudflared\" cannot be installed"
-    fi
-  fi
+  install_docker
   # Log in to Cloudflare
   cloudflared tunnel login
   # Find and check a tunnel
@@ -253,7 +257,7 @@ if confirm "Should this server be used as a gateway for Cloudflare for Teams?"; 
     tunnel=$(cloudflared tunnel list --name "${TITLE}" --output yaml)
     tunnel=$(echo -e "${tunnel}" | head -n 1 | awk '{print $3}')
     info "Its ID is \"${tunnel}\"\n"
-    if [ ! -f "/root/.cloudflared/${tunnel}.json" ]; then
+    if [ ! -f "${ROOT}/configs/cloudflared/${tunnel}.json" ]; then
       info "Delete the tunnel because its certificate missed\n"
       cloudflared tunnel route ip delete 0.0.0.0/0
       cloudflared tunnel delete --force "${TITLE}"
@@ -272,9 +276,10 @@ if confirm "Should this server be used as a gateway for Cloudflare for Teams?"; 
   # Create a config
   config="tunnel: ${TITLE}\n"
   config+="warp-routing:\n  enabled: true"
-  echo -e "${config}" >"${ROOT}/configs/cloudflared.yml"
-  # Set instructions
-  VPN_READY+="; cloudflared tunnel --config ${ROOT}/configs/cloudflared.yml run --force &"
+  echo -e "${config}" >"${ROOT}/configs/cloudflared/config.yml"
+  # Run a new container
+  docker rm --force cloudflared 2>/dev/null
+  cloudflared_service tunnel run --force
   # Extend the guide
   GUIDE+="$(info "In order to access via Cloudflare for Teams, do the following:")\n"
   GUIDE+="$(info "1) Download Cloudflare WARP client")\n"
@@ -368,7 +373,7 @@ log "Wait some time and boot up"; sleep 10;
 # Enable BBR to improve network performance
 sysctl net.core.default_qdisc=fq
 sysctl net.ipv4.tcp_congestion_control=bbr
-# Start VPN ${VPN_UP}${VPN_READY:-}
+# Start VPN ${VPN_UP}
 # Configure routing
 ip rule add from ${IP} table 123
 ip route add table 123 to ${CIDR} dev ${DEV}
@@ -388,7 +393,7 @@ echo "@reboot sh ${ROOT}/bin/up-vpn.sh >/dev/null 2>&1" | crontab -
 # Create a task to remove this tool
 cat >"${ROOT}/bin/remove.sh" <<EOL
 #!/bin/sh
-export PATH=${PATH}
+export PATH=${PATH}${REMOVE_REQUIREMENTS}
 log() { echo "\$(date) - \${1}" >> "/var/log/${TITLE}.log"; }
 log "Remove requirements";${REMOVE_ALL}
   docker system prune --force --all
