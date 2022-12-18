@@ -10,9 +10,9 @@ TCP_PORTS=(22) # TCP only
 ALL_PORTS=()   # TCP and UDP
 declare GUIDE
 declare VPN_UP
-declare VPN_READY
 declare VPN_REPAIR
-declare REMOVE_ALL
+declare REMOVE_REQUIREMENTS
+declare REMOVE_INSTRUCTIONS
 
 #############################
 ###   Helping functions   ###
@@ -73,6 +73,7 @@ function package_exists {
 
 function install_docker() {
   if ! command_exists docker; then
+    info "Install Docker\n"
     curl -sSL https://get.docker.com/ | sh
   fi
 }
@@ -106,7 +107,7 @@ GUIDE+="$(info "- Gateway:" "${GW}")\n\n"
 # Preparing file system
 #----------------------
 
-mkdir --parents ${ROOT}/{bin,settings,configs}
+mkdir --parents ${ROOT}/{bin,settings,data}
 
 ############################
 ###   General settings   ###
@@ -144,8 +145,8 @@ remove="
   # Shadowsocks
   command -v docker &>/dev/null && docker rm --force shadowsocks 2>/dev/null
   rm --force ${ROOT}/settings/shadowsocks
-  rm --force ${ROOT}/configs/shadowsocks.json"
-REMOVE_ALL+="${remove}"
+  rm --force ${ROOT}/data/shadowsocks.json"
+REMOVE_INSTRUCTIONS+="${remove}"
 clear -x
 if confirm "Should this server be accessible via Shadowsocks?"; then
   install_docker
@@ -161,11 +162,11 @@ if confirm "Should this server be accessible via Shadowsocks?"; then
   shadowsocks_method="chacha20-ietf-poly1305"
   config="{ 'server': '0.0.0.0', 'server_port': ${shadowsocks_port},"
   config+=" 'password': '${shadowsocks_secret}', 'method': '${shadowsocks_method}' }"
-  echo -e "${config}" >"${ROOT}/configs/shadowsocks.json"
-  # Stop and run a server
+  echo -e "${config}" >"${ROOT}/data/shadowsocks.json"
+  # Run a new container
   docker rm --force shadowsocks 2>/dev/null
-  docker run --detach --interactive --tty --restart always --net host --name shadowsocks \
-    --volume "${ROOT}/configs/shadowsocks.json:/etc/shadowsocks-rust/config.json" \
+  docker run --detach --name shadowsocks --restart always --net host \
+    --volume "${ROOT}/data/shadowsocks.json:/etc/shadowsocks-rust/config.json" \
     ghcr.io/shadowsocks/ssserver-rust:latest
   # Extend the guide
   details="${shadowsocks_method}:${shadowsocks_secret}@${PUBLIC}:${shadowsocks_port}"
@@ -184,7 +185,7 @@ remove="
   command -v docker &>/dev/null && docker rm --force shadowbox watchtower 2>/dev/null
   rm --recursive --force /opt/outline
   rm --force ${ROOT}/settings/outline"
-REMOVE_ALL+="${remove}"
+REMOVE_INSTRUCTIONS+="${remove}"
 clear -x
 if confirm "Should this server be accessible via Outline VPN?"; then
   install_docker
@@ -200,7 +201,7 @@ if confirm "Should this server be accessible via Outline VPN?"; then
   # Install and run Outline VPN
   url="https://github.com/Jigsaw-Code/outline-server/raw/master"
   url+="/src/server_manager/install_scripts/install_server.sh"
-  docker ps | grep shadowbox >/dev/null || bash -c "$(curl -sSL ${url})" -- \
+  docker ps --all | grep shadowbox >/dev/null || bash -c "$(curl -sSL ${url})" -- \
     --hostname="${PUBLIC}" \
     --api-port="${outline_api_port}" \
     --keys-port="${outline_keys_port}"
@@ -222,29 +223,36 @@ else eval "${remove}"; fi
 # Cloudflare for Teams
 #---------------------
 
+cloudflared_src="${ROOT}/data/cloudflared"
+cloudflared_dst="/home/nonroot/.cloudflared/"
+function cloudflared() {
+  docker run --rm \
+    --volume "${cloudflared_src}:${cloudflared_dst}" \
+    cloudflare/cloudflared:latest "$@"
+}
+function cloudflared_service() {
+  docker run --detach --name cloudflared --restart always \
+    --volume "${cloudflared_src}:${cloudflared_dst}" \
+    cloudflare/cloudflared:latest "$@"
+}
 remove="
   # Cloudflare for Teams
-  command -v cloudflared &>/dev/null && {
+  command -v docker &>/dev/null && docker ps --all | grep cloudflared >/dev/null &&
     cloudflared tunnel list --name ${TITLE} 2>/dev/null | grep --quiet ${TITLE} && {
       cloudflared tunnel route ip delete 0.0.0.0/0
       cloudflared tunnel delete --force ${TITLE}
     }
-    apt remove cloudflared -y
-  }
-  rm --force ${ROOT}/configs/cloudflared.yml"
-REMOVE_ALL+="${remove}"
+  command -v docker &>/dev/null && docker rm --force cloudflared 2>/dev/null
+  rm --recursive --force ${ROOT}/data/cloudflared"
+REMOVE_INSTRUCTIONS+="${remove}"
+REMOVE_REQUIREMENTS+="
+cloudflared_src=${cloudflared_src}
+cloudflared_dst=${cloudflared_dst}
+$(declare -f cloudflared)"
 clear -x
 if confirm "Should this server be used as a gateway for Cloudflare for Teams?"; then
-  # Install Cloudflare client
-  if ! command_exists cloudflared; then
-    arch=$(dpkg --print-architecture) && deb="$(mktemp)"
-    url="https://github.com/cloudflare/cloudflared/releases"
-    url+="/latest/download/cloudflared-linux-${arch}.deb"
-    wget --quiet --output-document="${deb}" "${url}"
-    if ! dpkg -i "${deb}"; then
-      error "A package \"cloudflared\" cannot be installed"
-    fi
-  fi
+  install_docker
+  mkdir --parents --mode=777 "${cloudflared_src}"
   # Log in to Cloudflare
   cloudflared tunnel login
   # Find and check a tunnel
@@ -253,7 +261,7 @@ if confirm "Should this server be used as a gateway for Cloudflare for Teams?"; 
     tunnel=$(cloudflared tunnel list --name "${TITLE}" --output yaml)
     tunnel=$(echo -e "${tunnel}" | head -n 1 | awk '{print $3}')
     info "Its ID is \"${tunnel}\"\n"
-    if [ ! -f "/root/.cloudflared/${tunnel}.json" ]; then
+    if [ ! -f "${ROOT}/data/cloudflared/${tunnel}.json" ]; then
       info "Delete the tunnel because its certificate missed\n"
       cloudflared tunnel route ip delete 0.0.0.0/0
       cloudflared tunnel delete --force "${TITLE}"
@@ -272,9 +280,10 @@ if confirm "Should this server be used as a gateway for Cloudflare for Teams?"; 
   # Create a config
   config="tunnel: ${TITLE}\n"
   config+="warp-routing:\n  enabled: true"
-  echo -e "${config}" >"${ROOT}/configs/cloudflared.yml"
-  # Set instructions
-  VPN_READY+="; cloudflared tunnel --config ${ROOT}/configs/cloudflared.yml run --force &"
+  echo -e "${config}" >"${ROOT}/data/cloudflared/config.yml"
+  # Run a new container
+  docker rm --force cloudflared 2>/dev/null
+  cloudflared_service tunnel run --force
   # Extend the guide
   GUIDE+="$(info "In order to access via Cloudflare for Teams, do the following:")\n"
   GUIDE+="$(info "1) Download Cloudflare WARP client")\n"
@@ -292,7 +301,7 @@ remove="
     nordvpn logout
     apt remove nordvpn -y
   }"
-REMOVE_ALL+="${remove}"
+REMOVE_INSTRUCTIONS+="${remove}"
 # Install NordVPN
 if ! command_exists nordvpn; then
   curl -sSL https://downloads.nordcdn.com/apps/linux/install.sh | sh
@@ -304,12 +313,11 @@ fi
 # Log in to NordVPN
 clear -x
 while ! nordvpn account >/dev/null; do
-  nordvpn login --nordaccount
   info "Please, do the following:\n"
-  info "1) Log you in a browser by the url specified above\n"
-  info "2) Copy a resulting url of the link named \"Return to the app\"\n"
-  info "3) Past the resulting url below (it's similar to \"nordvpn://...\")\n"
-  prompt "Specify the resulting url" && nordvpn login --callback "${REPLY}" || echo
+  info "1) Log you in at https://my.nordaccount.com/dashboard/nordvpn/\n"
+  info "2) Find a section named \"Access token\"\n"
+  info "3) Generate new token and past the token below\n"
+  prompt "Specify the resulting url" && nordvpn login --token "${REPLY}" || echo
 done
 # Let choose a country or group as prior
 vpn="nordvpn connect"
@@ -368,7 +376,7 @@ log "Wait some time and boot up"; sleep 10;
 # Enable BBR to improve network performance
 sysctl net.core.default_qdisc=fq
 sysctl net.ipv4.tcp_congestion_control=bbr
-# Start VPN ${VPN_UP}${VPN_READY:-}
+# Start VPN ${VPN_UP}
 # Configure routing
 ip rule add from ${IP} table 123
 ip route add table 123 to ${CIDR} dev ${DEV}
@@ -383,14 +391,17 @@ do
 done
 EOL
 chmod +x "${ROOT}/bin/up-vpn.sh"
-echo "@reboot sh ${ROOT}/bin/up-vpn.sh >/dev/null 2>&1" | crontab -
+(
+  crontab -l | grep --invert-match "${TITLE}"
+  echo "@reboot sh ${ROOT}/bin/up-vpn.sh >/dev/null 2>&1"
+) | crontab -
 
 # Create a task to remove this tool
 cat >"${ROOT}/bin/remove.sh" <<EOL
 #!/bin/sh
-export PATH=${PATH}
+export PATH=${PATH}${REMOVE_REQUIREMENTS}
 log() { echo "\$(date) - \${1}" >> "/var/log/${TITLE}.log"; }
-log "Remove requirements";${REMOVE_ALL}
+log "Remove components";${REMOVE_INSTRUCTIONS}
   docker system prune --force --all
 log "Restore routing";
   ip rule del table 123
