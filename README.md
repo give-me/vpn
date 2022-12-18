@@ -15,6 +15,32 @@ There are three channels that can be used individually or jointly to access the 
 | Outline              | Normal     | Personal keys  | Required by IP or a domain | Install [Outline Manager and Outline Client App](https://getoutline.org/get-started/)                                            |
 | Cloudflare for Teams | High       | Advanced       | Not required               | Get a free account for [Cloudflare for Teams](https://www.cloudflare.com/teams/) and install [WARP Client App](https://1.1.1.1/) |
 
+Detailed scheme of traffic routing between your device and Internet for each of the channels is shown below:
+
+```mermaid
+flowchart LR;
+    Y --Shadowsocks--> SC --Shadowsocks--> VC
+    Y --Outline-->     OC --Outline-->     VC
+    Y --Cloudflare-->  CN --Cloudflare-->  VN --Cloudflare--> VC --Cloudflare--> CC --Cloudflare--> VC
+
+    VC --All the channels--> VN ---> I
+    
+    Y[Your device]
+    VN[NordVPN network]
+    CN[Cloudflare network]
+    I[Internet]
+
+    subgraph Your server
+    SC[Shadowsocks container]
+    OC[Outline container]
+    CC[Cloudflared container]
+    VC[NordVPN client]
+    end
+```
+
+You should not choose Outline as a channel during installation if your server has an ARM processor because vanilla
+Outline does not support ARM processors. Other channels work perfectly with ARM processors.
+
 ### Install
 
 1. Make some preparations:
@@ -33,6 +59,12 @@ There are three channels that can be used individually or jointly to access the 
 4. Configure the server and follow further instructions:
 
    ```bash -c "$(curl -sSL https://github.com/give-me/vpn/raw/master/install.sh)"```
+
+5. Also, NordVPN may hang blocking access to the server via SSH until reboot (this has happened a couple of times on
+   ARM processors). So, if you have no any possibility to reboot the server without SSH, it is strongly recommended to
+   enable periodic reboot of the server. For example, you can do it with a command below every Sunday at 12:00 AM:
+
+   ```(sudo crontab -l; echo "@weekly /usr/sbin/reboot --force >/dev/null 2>&1") | sudo crontab -```
 
 Later, you can find open ports by running ```ss --processes --listening --tcp``` if you have forgotten them. In order to
 change configuration, just repeat the second and fourth steps of this guide.
