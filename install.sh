@@ -387,7 +387,10 @@ do
 done
 EOL
 chmod +x "${ROOT}/bin/up-vpn.sh"
-echo "@reboot sh ${ROOT}/bin/up-vpn.sh >/dev/null 2>&1" | crontab -
+(
+  crontab -l | grep --invert-match "${TITLE}"
+  echo "@reboot sh ${ROOT}/bin/up-vpn.sh >/dev/null 2>&1"
+) | crontab -
 
 # Create a task to remove this tool
 cat >"${ROOT}/bin/remove.sh" <<EOL
