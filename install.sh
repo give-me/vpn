@@ -252,6 +252,7 @@ $(declare -f cloudflared)"
 clear -x
 if confirm "Should this server be used as a gateway for Cloudflare for Teams?"; then
   install_docker
+  mkdir --parents --mode=777 "${cloudflared_src}"
   # Log in to Cloudflare
   cloudflared tunnel login
   # Find and check a tunnel
