@@ -137,13 +137,16 @@ fi
 ###   Channels to connect the server   ###
 ##########################################
 
+REMOVE_REQUIREMENTS+="
+$(declare -f command_exists)"
+
 #-----------------------
 # Standalone Shadowsocks
 #-----------------------
 
 remove="
   # Shadowsocks
-  command -v docker &>/dev/null && docker rm --force shadowsocks 2>/dev/null
+  command_exists docker && docker rm --force shadowsocks 2>/dev/null
   rm --force ${ROOT}/settings/shadowsocks
   rm --force ${ROOT}/data/shadowsocks.json"
 REMOVE_INSTRUCTIONS+="${remove}"
@@ -182,7 +185,7 @@ else eval "${remove}"; fi
 
 remove="
   # Outline VPN
-  command -v docker &>/dev/null && docker rm --force shadowbox watchtower 2>/dev/null
+  command_exists docker && docker rm --force shadowbox watchtower 2>/dev/null
   rm --recursive --force /opt/outline
   rm --force ${ROOT}/settings/outline"
 REMOVE_INSTRUCTIONS+="${remove}"
@@ -207,8 +210,8 @@ if confirm "Should this server be accessible via Outline VPN?"; then
     --keys-port="${outline_keys_port}"
   # Extend the guide if Outline VPN has been configured
   secret="/opt/outline/access.txt"
-  api_url=$(grep "apiUrl" "${secret}" | sed "s/apiUrl://" || echo)
-  cert_sha=$(grep "certSha256" "${secret}" | sed "s/certSha256://" || echo)
+  api_url=$(grep "apiUrl" "${secret}" | sed "s/apiUrl://" || :)
+  cert_sha=$(grep "certSha256" "${secret}" | sed "s/certSha256://" || :)
   details="{\"apiUrl\":\"${api_url}\",\"certSha256\":\"${cert_sha}\"}"
   if [ "${api_url}" ] && [ "${cert_sha}" ]; then
     GUIDE+="$(info "In order to access via Outline VPN, do the following:")\n"
@@ -237,12 +240,12 @@ function cloudflared_service() {
 }
 remove="
   # Cloudflare for Teams
-  command -v docker &>/dev/null && docker ps --all | grep cloudflared >/dev/null &&
+  command_exists docker && docker ps --all | grep cloudflared >/dev/null &&
     cloudflared tunnel list --name ${TITLE} 2>/dev/null | grep --quiet ${TITLE} && {
       cloudflared tunnel route ip delete 0.0.0.0/0
       cloudflared tunnel delete --force ${TITLE}
     }
-  command -v docker &>/dev/null && docker rm --force cloudflared 2>/dev/null
+  command_exists docker && docker rm --force cloudflared 2>/dev/null
   rm --recursive --force ${ROOT}/data/cloudflared"
 REMOVE_INSTRUCTIONS+="${remove}"
 REMOVE_REQUIREMENTS+="
@@ -296,7 +299,7 @@ else eval "${remove}"; fi
 
 remove="
   # NordVPN
-  command -v nordvpn &>/dev/null && {
+  command_exists nordvpn && {
     nordvpn disconnect
     nordvpn logout
     apt remove nordvpn -y
@@ -317,7 +320,7 @@ while ! nordvpn account >/dev/null; do
   info "1) Log you in at https://my.nordaccount.com/dashboard/nordvpn/\n"
   info "2) Find a section named \"Access token\"\n"
   info "3) Generate new token and past the token below\n"
-  prompt "Specify the resulting url" && nordvpn login --token "${REPLY}" || echo
+  prompt "Specify the token" && nordvpn login --token "${REPLY}" || :
 done
 # Let choose a country or group as prior
 vpn="nordvpn connect"
@@ -360,7 +363,7 @@ GUIDE+="$(info "NordVPN has been successfully configured:")\n"
 GUIDE+="$(info "- prior country or group:" "${prior:-none}")\n"
 GUIDE+="$(info "- allowed TCP only ports:" "${TCP_PORTS[*]}")\n"
 GUIDE+="$(info "- allowed TCP and UDP ports:" "${ALL_PORTS[*]}")\n\n"
-GUIDE+="$(info "Now restart the server to up the gateway")\n"
+GUIDE+="$(info "Now reboot the server to up the gateway")\n"
 
 ############################
 ###   Internal scripts   ###
@@ -402,11 +405,11 @@ cat >"${ROOT}/bin/remove.sh" <<EOL
 export PATH=${PATH}${REMOVE_REQUIREMENTS}
 log() { echo "\$(date) - \${1}" >> "/var/log/${TITLE}.log"; }
 log "Remove components";${REMOVE_INSTRUCTIONS}
-  docker system prune --force --all
+  command_exists docker && docker system prune --force --all 2>/dev/null
 log "Restore routing";
-  ip rule del table 123
-  ip route flush table 123
-log "Remove this tool";
+  ip rule del table 123 2>/dev/null
+  ip route flush table 123 2>/dev/null
+log "Remove all the files";
   crontab -l | grep --invert-match "${TITLE}" | crontab -
   rm --recursive --force "${ROOT}"
 EOL
