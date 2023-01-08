@@ -392,7 +392,7 @@ done
 EOL
 chmod +x "${ROOT}/bin/up-vpn.sh"
 (
-  crontab -l | grep --invert-match "${TITLE}"
+  crontab -l 2>/dev/null | grep --invert-match "${TITLE}" || :
   echo "@reboot sh ${ROOT}/bin/up-vpn.sh >/dev/null 2>&1"
 ) | crontab -
 
