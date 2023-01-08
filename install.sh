@@ -387,7 +387,7 @@ do
   # Check the connection twice
   sleep 10; check || check && continue
   # Try to repair VPN ${VPN_REPAIR}
-  log "Reboot the server"; reboot --force
+  log "Reboot the server"; reboot --force --force
 done
 EOL
 chmod +x "${ROOT}/bin/up-vpn.sh"

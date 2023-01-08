@@ -64,7 +64,7 @@ Outline does not support ARM processors. Other channels work perfectly with ARM 
    ARM processors). So, if you have no any possibility to reboot the server without SSH, it is strongly recommended to
    enable periodic reboot of the server. For example, you can do it with a command below every Sunday at 12:00 AM:
 
-   ```(sudo crontab -l; echo "@weekly /usr/sbin/reboot --force >/dev/null 2>&1") | sudo crontab -```
+   ```(sudo crontab -l; echo "@weekly /usr/sbin/reboot --force --force >/dev/null 2>&1") | sudo crontab -```
 
 Later, you can find open ports by running ```ss --processes --listening --tcp``` if you have forgotten them. In order to
 change configuration, just repeat the second and fourth steps of this guide.
