@@ -8,6 +8,9 @@ TITLE="vpn-gateway"
 ROOT="/opt/${TITLE}"
 TCP_PORTS=(22) # TCP only
 ALL_PORTS=()   # TCP and UDP
+TASK_TO_START="${ROOT}/bin/gateway.sh"
+TASK_TO_REINSTALL="${ROOT}/bin/reinstall.sh"
+TASK_TO_UNINSTALL="${ROOT}/bin/uninstall.sh"
 declare GUIDE
 declare PUBLIC
 declare VPN_UP
@@ -119,7 +122,7 @@ mkdir --parents ${ROOT}/{bin,settings,data}
 #---------------------------
 
 clear -x
-test -f "${ROOT}/settings/public" && recent="$(cat "${ROOT}/settings/public")" &&
+test -e "${ROOT}/settings/public" && recent="$(cat "${ROOT}/settings/public")" &&
   confirm "Should ${recent} be used to access this server (was specified before)" &&
   PUBLIC="${recent}" || rm --force "${ROOT}/settings/public"
 test -z "${PUBLIC-}" &&
@@ -160,7 +163,7 @@ clear -x
 if confirm "Should this server be accessible via Shadowsocks?"; then
   install_docker
   # Generate missing settings and load the settings
-  if [ ! -f "${ROOT}/settings/shadowsocks" ]; then
+  if test ! -e "${ROOT}/settings/shadowsocks"; then
     settings="shadowsocks_secret='$(head -c 10 /dev/urandom | base64)'\n"
     settings+="shadowsocks_port=$(generate_port)"
     echo -e "${settings}" >"${ROOT}/settings/shadowsocks"
@@ -199,7 +202,7 @@ clear -x
 if confirm "Should this server be accessible via Outline VPN?"; then
   install_docker
   # Generate missing numbers of public ports and load the numbers
-  if [ ! -f "${ROOT}/settings/outline" ]; then
+  if test ! -e "${ROOT}/settings/outline"; then
     settings="outline_api_port=$(generate_port)\n"
     settings+="outline_keys_port=$(generate_port)"
     echo -e "${settings}" >"${ROOT}/settings/outline"
@@ -219,7 +222,7 @@ if confirm "Should this server be accessible via Outline VPN?"; then
   api_url=$(grep "apiUrl" "${secret}" | sed "s/apiUrl://" || :)
   cert_sha=$(grep "certSha256" "${secret}" | sed "s/certSha256://" || :)
   details="{\"apiUrl\":\"${api_url}\",\"certSha256\":\"${cert_sha}\"}"
-  if [ "${api_url}" ] && [ "${cert_sha}" ]; then
+  if test "${api_url}" -a "${cert_sha}"; then
     GUIDE+="$(info "In order to access via Outline VPN, do the following:")\n"
     GUIDE+="$(info "1) Ensure that ports are open:")\n"
     GUIDE+="$(info "- management port:" "${outline_api_port} (TCP)")\n"
@@ -270,7 +273,7 @@ if confirm "Should this server be used as a gateway for Cloudflare for Teams?"; 
     tunnel=$(cloudflared tunnel list --name "${TITLE}" --output yaml)
     tunnel=$(echo -e "${tunnel}" | head -n 1 | awk '{print $3}')
     info "Its ID is \"${tunnel}\"\n"
-    if [ ! -f "${ROOT}/data/cloudflared/${tunnel}.json" ]; then
+    if test ! -e "${ROOT}/data/cloudflared/${tunnel}.json"; then
       info "Delete the tunnel because its certificate missed\n"
       cloudflared tunnel route ip delete 0.0.0.0/0
       cloudflared tunnel delete --force "${TITLE}"
@@ -352,9 +355,9 @@ nordvpn set dns 1.1.1.1
 nordvpn set technology NordLynx
 log \"Connect VPN\"
 ${vpn} || {
-  ! nordvpn account >/dev/null &&
-  log \"Seems like you logged out. Try to reconfigure this tool\" ||
-  log \"Something goes wrong. Try to run 'nordvpn connect'\"
+  nordvpn account >/dev/null &&
+  log \"Something goes wrong. Try to run 'nordvpn connect'\" ||
+  log \"Seems like you logged out. Try to run '${TASK_TO_REINSTALL}'\"
   log \"This tool stopped until reboot the server\"; exit 1
 }"
 # - to repair vpn
@@ -380,8 +383,8 @@ GUIDE+="$(info "Now reboot the server to up the gateway")\n"
 ###   Internal scripts   ###
 ############################
 
-# Create a task on startup
-cat >"${ROOT}/bin/up-vpn.sh" <<EOL
+# Create a task to start the gateway
+cat >"${TASK_TO_START}" <<EOL
 #!/bin/sh
 export PATH=${PATH}
 log() { echo "\$(date) - \${1}" >> "/var/log/${TITLE}.log"; }
@@ -404,14 +407,17 @@ do
   log "Reboot the server"; reboot --force --force
 done
 EOL
-chmod +x "${ROOT}/bin/up-vpn.sh"
 (
   crontab -l 2>/dev/null | grep --invert-match "${TITLE}" || :
-  echo "@reboot sh ${ROOT}/bin/up-vpn.sh >/dev/null 2>&1"
+  echo "@reboot sh ${TASK_TO_START} >/dev/null 2>&1"
 ) | crontab -
 
-# Create a task to remove this tool
-cat >"${ROOT}/bin/remove.sh" <<EOL
+# Create a task to reinstall this tool
+test "${BASH_EXECUTION_STRING:-}" &&
+  echo "${BASH_EXECUTION_STRING}" >"${TASK_TO_REINSTALL}"
+
+# Create a task to uninstall this tool
+cat >"${TASK_TO_UNINSTALL}" <<EOL
 #!/bin/sh
 export PATH=${PATH}${REMOVE_REQUIREMENTS}
 log() { echo "\$(date) - \${1}" >> "/var/log/${TITLE}.log"; }
@@ -424,7 +430,9 @@ log "Remove all the files";
   crontab -l | grep --invert-match "${TITLE}" | crontab -
   rm --recursive --force "${ROOT}"
 EOL
-chmod +x "${ROOT}/bin/remove.sh"
+
+# Make all the tasks executable
+chmod +x "${ROOT}/bin/"*
 
 # Notify about following actions
 clear -x && info "NordVPN Gateway\n\n" && echo -e ${GUIDE}
