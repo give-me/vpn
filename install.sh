@@ -9,6 +9,7 @@ ROOT="/opt/${TITLE}"
 TCP_PORTS=(22) # TCP only
 ALL_PORTS=()   # TCP and UDP
 declare GUIDE
+declare PUBLIC
 declare VPN_UP
 declare VPN_REPAIR
 declare REMOVE_REQUIREMENTS
@@ -118,11 +119,16 @@ mkdir --parents ${ROOT}/{bin,settings,data}
 #---------------------------
 
 clear -x
-info "The following IP was found for the interface ${DEV}:" "${IP}\n"
-if confirm "Should a domain or another IP be used to access this server?"; then
-  prompt "Specify a domain or IP instead of ${IP}"
-  PUBLIC="${REPLY}"
-else PUBLIC="${IP}"; fi
+test -f "${ROOT}/settings/public" && recent="$(cat "${ROOT}/settings/public")" &&
+  confirm "Should ${recent} be used to access this server (was specified before)" &&
+  PUBLIC="${recent}" || rm --force "${ROOT}/settings/public"
+test -z "${PUBLIC-}" &&
+  confirm "Should ${IP} be used to access this server (was found for ${DEV})" &&
+  PUBLIC="${IP}"
+while test -z "${PUBLIC-}"; do
+  prompt "Specify another domain or IP to access this server" &&
+    PUBLIC="${REPLY}" && echo "${PUBLIC}" >"${ROOT}/settings/public" || :
+done
 
 #---------------------------
 # Most useful ports to allow
