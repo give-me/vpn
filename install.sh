@@ -351,7 +351,12 @@ nordvpn set killswitch on
 nordvpn set dns 1.1.1.1
 nordvpn set technology NordLynx
 log \"Connect VPN\"
-${vpn} || exit 1"
+${vpn} || {
+  ! nordvpn account >/dev/null &&
+  log \"Seems like you logged out. Try to reconfigure this tool\" ||
+  log \"Something goes wrong. Try to run 'nordvpn connect'\"
+  log \"This tool stopped until reboot the server\"; exit 1
+}"
 # - to repair vpn
 VPN_REPAIR="
   log \"Connection lost. Try to reconnect NordVPN\"
