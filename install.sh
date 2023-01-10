@@ -57,8 +57,8 @@ function confirm() {
   while :; do
     ask "${1} [Y/N]"
     read -r -s -n 1
-    [[ "${REPLY}" =~ ^y|Y$ ]] && echo && return 0
-    [[ "${REPLY}" =~ ^n|N$ ]] && echo && return 1
+    [[ "${REPLY}" =~ ^y|Y$ ]] && echo "Y" && sleep 1 && return 0
+    [[ "${REPLY}" =~ ^n|N$ ]] && echo "N" && sleep 1 && return 1
     style 1 "${REPLY} is a wrong answer\n"
   done
 }
