@@ -1,11 +1,12 @@
 # NordVPN Gateway
 
-If you cannot access [NordVPN](https://nordvpn.com/) directly or do not have a stable connection, but you do love their
-great protection including hiding your IP address and other cool features, you can place NordVPN connection behind
-standalone [Shadowsocks](https://shadowsocks.org/), [Outline](https://getoutline.org/)
-and/or [Cloudflare for Teams](https://www.cloudflare.com/teams/). Just turn your server into a gateway with this tool!
+NordVPN Gateway is a tool which turns your server into a gateway where NordVPN connection is placed behind different
+channels, like standalone [Shadowsocks](https://shadowsocks.org/), [Outline](https://getoutline.org/)
+and/or [Cloudflare for Teams](https://www.cloudflare.com/teams/). It is useful when you cannot
+access [NordVPN](https://nordvpn.com/) directly or do not have a stable connection, but you do love their
+great protection including hiding your IP address and other cool features.
 
-## Usage
+## Installation
 
 There are three channels that can be used individually or jointly to access the gateway from your devices:
 
@@ -15,33 +16,8 @@ There are three channels that can be used individually or jointly to access the 
 | Outline              | Normal     | Personal keys  | Required by IP or a domain | Install [Outline Manager and Outline Client App](https://getoutline.org/get-started/)                                            |
 | Cloudflare for Teams | High       | Advanced       | Not required               | Get a free account for [Cloudflare for Teams](https://www.cloudflare.com/teams/) and install [WARP Client App](https://1.1.1.1/) |
 
-Detailed scheme of traffic routing between your device and Internet for each of the channels is shown below:
-
-```mermaid
-flowchart LR;
-    Y --Shadowsocks--> SC --Shadowsocks--> VC
-    Y --Outline-->     OC --Outline-->     VC
-    Y --Cloudflare-->  CN --Cloudflare-->  VN --Cloudflare--> VC --Cloudflare--> CC --Cloudflare--> VC
-
-    VC --All the channels--> VN ---> I
-    
-    Y[Your device]
-    VN[NordVPN network]
-    CN[Cloudflare network]
-    I[Internet]
-
-    subgraph Your server
-    SC[Shadowsocks container]
-    OC[Outline container]
-    CC[Cloudflared container]
-    VC[NordVPN client]
-    end
-```
-
-You should not choose Outline as a channel during installation if your server has an ARM processor because vanilla
-Outline does not support ARM processors. Other channels work perfectly with ARM processors.
-
-### Install
+> If your server has an ARM processor, you should not choose Outline as a channel during installation because vanilla
+> Outline does not support ARM processors. Other channels work perfectly with ARM processors.
 
 1. Make some preparations:
     1. Buy a subscription for [NordVPN](https://nordvpn.com/).
@@ -66,16 +42,14 @@ Outline does not support ARM processors. Other channels work perfectly with ARM 
 
    ```bash -c "$(curl -sSL https://github.com/give-me/vpn/raw/master/install.sh)"```
 
-### Using
+## Under the hood
 
 After following the instructions mentioned above, the channels configured by you will *automatically* start. After each
 rebooting the server, CRON *automatically* runs a script ```/opt/vpn-gateway/bin/gateway.sh``` which configures the
 server, connects VPN and checks health periodically. In case of connection loss, the script tries to reconnect VPN and
 reboots the server if tryings failed.
 
-Important events and useful recommendations for the cases of loosing authorization and other problems will be available
-in a log by running ```tail -f /var/log/vpn-gateway.log```. Open ports using by this tool can be found by
-running ```ss --processes --listening --tcp```. A file structure created by this tool during installation or using is as
+A file structure created by this tool during installation or using is as
 follows:
 
 ```
@@ -93,12 +67,41 @@ follows:
         └── vpn-gateway.log   (this tool logs events here)
 ```
 
-In order to reinstall this tool, just run ```/opt/vpn-gateway/bin/reinstall.sh``` as root or repeat the 2nd and 5th
-steps of this guide to update this tool to the latest version.
+Detailed scheme of traffic routing between your device and Internet for each of the channels is shown below:
 
-### Uninstall
+```mermaid
+flowchart LR;
+    Y --Shadowsocks--> SC --Shadowsocks--> VC
+    Y --Outline-->     OC --Outline-->     VC
+    Y --Cloudflare-->  CN --Cloudflare-->  VN --Cloudflare--> VC --Cloudflare--> CC --Cloudflare--> VC
 
-In order to uninstall this tool, just run ```/opt/vpn-gateway/bin/uninstall.sh``` as root.
+    VC --All the channels--> VN ---> I
+    
+    Y[Your device]
+    VN[NordVPN network]
+    CN[Cloudflare network]
+    I[Internet]
 
-If Cloudflare for Teams was configured as a channel, you can delete unnecessary API Tokens created upon request of this
-tool and available [here](https://dash.cloudflare.com/profile/api-tokens) because Cloudflare set a limit of API Tokens.
+    subgraph Your server
+    SC[Shadowsocks container]
+    OC[Outline container]
+    CC[Cloudflared container]
+    VC[NordVPN client]
+    end
+```
+
+## Maintain
+
+Important events and useful recommendations for the cases of loosing authorization and other problems will be available
+in a log by running ```tail -f /var/log/vpn-gateway.log```. Open ports using by this tool can be found by
+running ```ss --processes --listening --tcp```.
+
+In order to reconfigure the gateway *without* updating this tool, just run ```/opt/vpn-gateway/bin/reinstall.sh``` as
+root. In order to reconfigure the gateway *with* updating this tool to the latest version, just repeat the 2nd and 5th
+steps of the installation guide.
+
+## Uninstall
+
+In order to uninstall this tool, just run ```/opt/vpn-gateway/bin/uninstall.sh``` as root. Additionally, if Cloudflare
+for Teams was configured as a channel, you can delete unnecessary API Tokens created upon request of this tool and
+available [here](https://dash.cloudflare.com/profile/api-tokens) because Cloudflare set a limit of API Tokens.
