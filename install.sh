@@ -97,8 +97,8 @@ function generate_port() {
 # Check permissions
 test $EUID -eq 0 || error "This tool should be executed by root only"
 # Get details of a main interface
-DEV=$(ip route show default | awk '{print $5}')
-GW=$(ip route show default | awk '{print $3}')
+DEV=$(ip route show default | head -n 1 | awk '{print $5}')
+GW=$(ip route show default | head -n 1 | awk '{print $3}')
 IP=$(ip -oneline route get '1.1.1.1' oif "${DEV}" | awk '{print $7}')
 CIDR=$(ip route show proto kernel | grep "${IP}" | awk '{print $1}')
 # Extend the guide
