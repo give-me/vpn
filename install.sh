@@ -327,8 +327,8 @@ clear -x
 while ! nordvpn account >/dev/null; do
   info "Please, do the following:\n"
   info "1) Log you in at https://my.nordaccount.com/dashboard/nordvpn/\n"
-  info "2) Find a section named \"Access token\"\n"
-  info "3) Generate new token and past the token below\n"
+  info "2) Find a section named \"Access token\" (Manual setup / Set up NordVPN manually)\n"
+  info "3) Generate new token and past the token below (non-expirable token is better)\n"
   prompt "Specify the token" && nordvpn login --token "${REPLY}" || :
 done
 # Let choose a country or group as prior
