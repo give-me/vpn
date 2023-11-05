@@ -102,6 +102,10 @@ steps of the installation guide.
 
 ## Uninstall
 
-In order to uninstall this tool, just run ```/opt/vpn-gateway/bin/uninstall.sh``` as root. Additionally, if Cloudflare
-for Teams was configured as a channel, you can delete unnecessary API Tokens created upon request of this tool and
-available [here](https://dash.cloudflare.com/profile/api-tokens) because Cloudflare set a limit of API Tokens.
+In order to uninstall this tool, just run ```/opt/vpn-gateway/bin/uninstall.sh``` as root. In this case, logging out
+from NordVPN is made with a command ```nordvpn logout``` instead of ```nordvpn logout --persist-token``` your token will
+expire regardless of which token you specified (expirable in 30 days or non-expirable).
+
+Additionally, if Cloudflare for Teams was configured as a channel, you can delete unnecessary API Tokens created upon
+request of this tool and available [here](https://dash.cloudflare.com/profile/api-tokens) because Cloudflare set a limit
+of API Tokens.
