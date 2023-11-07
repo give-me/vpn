@@ -2,19 +2,19 @@
 
 NordVPN Gateway is a tool which turns your server into a gateway where NordVPN connection is placed behind different
 channels, like standalone [Shadowsocks](https://shadowsocks.org/), [Outline](https://getoutline.org/)
-and/or [Cloudflare for Teams](https://www.cloudflare.com/teams/). It is useful when you cannot
-access [NordVPN](https://nordvpn.com/) directly or do not have a stable connection, but you do love their
-great protection including hiding your IP address and other cool features.
+and/or [Cloudflare Zero Trust](https://www.cloudflare.com/zero-trust/). It is useful when you cannot
+access [NordVPN](https://nordvpn.com/) directly or do not have a stable connection, but you do love their great
+protection including hiding your IP address and other cool features.
 
 ## Installation
 
 There are three channels that can be used individually or jointly to access the gateway from your devices:
 
-| Channel              | Difficulty | Access control | Public access to a server  | Requirements                                                                                                                     |
-|----------------------|------------|----------------|----------------------------|----------------------------------------------------------------------------------------------------------------------------------|
-| Shadowsocks          | Low        | One shared key | Required by IP or a domain | Install [Outline Client App](https://getoutline.org/get-started/)                                                                |
-| Outline              | Normal     | Personal keys  | Required by IP or a domain | Install [Outline Manager and Outline Client App](https://getoutline.org/get-started/)                                            |
-| Cloudflare for Teams | High       | Advanced       | Not required               | Get a free account for [Cloudflare for Teams](https://www.cloudflare.com/teams/) and install [WARP Client App](https://1.1.1.1/) |
+| Channel               | Difficulty | Access control | Public access to a server  | Requirements                                                                                                                           |
+|-----------------------|------------|----------------|----------------------------|----------------------------------------------------------------------------------------------------------------------------------------|
+| Shadowsocks           | Low        | One shared key | Required by IP or a domain | Install [Outline Client App](https://getoutline.org/get-started/)                                                                      |
+| Outline               | Normal     | Personal keys  | Required by IP or a domain | Install [Outline Manager and Outline Client App](https://getoutline.org/get-started/)                                                  |
+| Cloudflare Zero Trust | High       | Advanced       | Not required               | Get a free account for [Cloudflare Zero Trust](https://www.cloudflare.com/zero-trust/) and install [WARP Client App](https://1.1.1.1/) |
 
 > If your server has an ARM processor, you should not choose Outline as a channel during installation because vanilla
 > Outline does not support ARM processors. Other channels work perfectly with ARM processors.
@@ -49,8 +49,7 @@ rebooting the server, CRON *automatically* runs a script ```/opt/vpn-gateway/bin
 server, connects VPN and checks health periodically. In case of connection loss, the script tries to reconnect VPN and
 reboots the server if tryings failed.
 
-A file structure created by this tool during installation or using is as
-follows:
+A file structure created by this tool during installation or using is as follows:
 
 ```
 /
@@ -90,6 +89,10 @@ flowchart LR;
     end
 ```
 
+It is important to note that whereas Shadowsocks and Outline channels require the server to be publicly accessible to
+establish connections from your devices to the gateway, Cloudflare Zero Trust channel **can work with any server**, even
+a virtual server running locally and inaccessible from the outside.
+
 ## Maintain
 
 Important events and useful recommendations for the cases of loosing authorization and other problems will be available
@@ -102,6 +105,10 @@ steps of the installation guide.
 
 ## Uninstall
 
-In order to uninstall this tool, just run ```/opt/vpn-gateway/bin/uninstall.sh``` as root. Additionally, if Cloudflare
-for Teams was configured as a channel, you can delete unnecessary API Tokens created upon request of this tool and
-available [here](https://dash.cloudflare.com/profile/api-tokens) because Cloudflare set a limit of API Tokens.
+In order to uninstall this tool, just run ```/opt/vpn-gateway/bin/uninstall.sh``` as root. In this case, logging out
+from NordVPN is made with a command ```nordvpn logout``` instead of ```nordvpn logout --persist-token``` your token will
+expire regardless of which token you specified (expirable in 30 days or non-expirable).
+
+Additionally, if Cloudflare Zero Trust was configured as a channel, you can delete unnecessary API Tokens created upon
+request of this tool and available [here](https://dash.cloudflare.com/profile/api-tokens) because Cloudflare set a limit
+of API Tokens.
