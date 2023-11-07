@@ -3,8 +3,8 @@
 NordVPN Gateway is a tool which turns your server into a gateway where NordVPN connection is placed behind different
 channels, like standalone [Shadowsocks](https://shadowsocks.org/), [Outline](https://getoutline.org/)
 and/or [Cloudflare Zero Trust](https://www.cloudflare.com/zero-trust/). It is useful when you cannot
-access [NordVPN](https://nordvpn.com/) directly or do not have a stable connection, but you do love their
-great protection including hiding your IP address and other cool features.
+access [NordVPN](https://nordvpn.com/) directly or do not have a stable connection, but you do love their great
+protection including hiding your IP address and other cool features.
 
 ## Installation
 
@@ -49,8 +49,7 @@ rebooting the server, CRON *automatically* runs a script ```/opt/vpn-gateway/bin
 server, connects VPN and checks health periodically. In case of connection loss, the script tries to reconnect VPN and
 reboots the server if tryings failed.
 
-A file structure created by this tool during installation or using is as
-follows:
+A file structure created by this tool during installation or using is as follows:
 
 ```
 /
@@ -89,6 +88,10 @@ flowchart LR;
     VC[NordVPN client]
     end
 ```
+
+It is important to note that whereas Shadowsocks and Outline channels require the server to be publicly accessible to
+establish connections from your devices to the gateway, Cloudflare Zero Trust channel **can work with any server**, even
+a virtual server running locally and inaccessible from the outside.
 
 ## Maintain
 
