@@ -231,9 +231,9 @@ if confirm "Should this server be accessible via Outline VPN?"; then
   fi
 else eval "${remove}"; fi
 
-#---------------------
-# Cloudflare for Teams
-#---------------------
+#----------------------
+# Cloudflare Zero Trust
+#----------------------
 
 cloudflared_src="${ROOT}/data/cloudflared"
 cloudflared_dst="/home/nonroot/.cloudflared/"
@@ -248,7 +248,7 @@ function cloudflared_service() {
     cloudflare/cloudflared:latest "$@"
 }
 remove="
-  # Cloudflare for Teams
+  # Cloudflare Zero Trust
   command_exists docker && docker ps --all | grep cloudflared >/dev/null &&
     cloudflared tunnel list --name ${TITLE} 2>/dev/null | grep --quiet ${TITLE} && {
       cloudflared tunnel route ip delete 0.0.0.0/0
@@ -262,14 +262,14 @@ cloudflared_src=${cloudflared_src}
 cloudflared_dst=${cloudflared_dst}
 $(declare -f cloudflared)"
 clear -x
-if confirm "Should this server be used as a gateway for Cloudflare for Teams?"; then
+if confirm "Should this server be used as a gateway for Cloudflare Zero Trust?"; then
   install_docker
   mkdir --parents --mode=777 "${cloudflared_src}"
   # Log in to Cloudflare
   cloudflared tunnel login
   # Find and check a tunnel
   if cloudflared tunnel list --name "${TITLE}" | grep --quiet "${TITLE}"; then
-    info "Found the tunnel \"${TITLE}\" at Cloudflare for Teams\n"
+    info "Found the tunnel \"${TITLE}\" at Cloudflare Zero Trust\n"
     tunnel=$(cloudflared tunnel list --name "${TITLE}" --output yaml)
     tunnel=$(echo -e "${tunnel}" | head -n 1 | awk '{print $3}')
     info "Its ID is \"${tunnel}\"\n"
@@ -297,9 +297,9 @@ if confirm "Should this server be used as a gateway for Cloudflare for Teams?"; 
   docker rm --force cloudflared 2>/dev/null
   cloudflared_service tunnel run --force
   # Extend the guide
-  GUIDE+="$(info "In order to access via Cloudflare for Teams, do the following:")\n"
+  GUIDE+="$(info "In order to access via Cloudflare Zero Trust, do the following:")\n"
   GUIDE+="$(info "1) Download Cloudflare WARP client")\n"
-  GUIDE+="$(info "2) Log users in to your Team")\n\n"
+  GUIDE+="$(info "2) Log users in to your Zero Trust organization")\n\n"
 else eval "${remove}"; fi
 
 ###################################
