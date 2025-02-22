@@ -101,7 +101,7 @@ running ```ss --processes --listening --tcp```.
 
 In order to reconfigure the gateway *without* updating this tool, just run ```/opt/vpn-gateway/bin/reinstall.sh``` as
 root. In order to reconfigure the gateway *with* updating this tool to the latest version, just repeat the 2nd and 5th
-steps of the installation guide.
+steps of the installation guide. Upgrading Shadowsocks and Cloudflared is made during any way of reconfiguration.
 
 ## Uninstall
 
