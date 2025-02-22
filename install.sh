@@ -216,7 +216,9 @@ if confirm "Should this server be accessible via Outline VPN?"; then
   # Install and run Outline VPN
   url="https://github.com/Jigsaw-Code/outline-server/raw/master"
   url+="/src/server_manager/install_scripts/install_server.sh"
-  docker ps --all | grep shadowbox >/dev/null || bash -c "$(curl -fsSL ${url})" -- \
+  docker ps --all | grep shadowbox >/dev/null ||
+    SB_DEFAULT_SERVER_NAME="${TITLE}" \
+    bash -c "$(curl -fsSL ${url})" -- \
     --hostname="${PUBLIC}" \
     --api-port="${outline_api_port}" \
     --keys-port="${outline_keys_port}"
