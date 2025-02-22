@@ -298,7 +298,7 @@ if confirm "Should this server be used as a gateway for Cloudflare Zero Trust?";
   echo -e "${config}" >"${ROOT}/data/cloudflared/config.yml"
   # Run a new container
   docker rm --force cloudflared 2>/dev/null
-  cloudflared_service tunnel run --force
+  cloudflared_service tunnel run
   # Extend the guide
   GUIDE+="$(info "In order to access via Cloudflare Zero Trust, do the following:")\n"
   GUIDE+="$(info "1) Download Cloudflare WARP client")\n"
