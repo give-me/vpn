@@ -17,6 +17,9 @@ declare VPN_UP
 declare VPN_REPAIR
 declare REMOVE_REQUIREMENTS
 declare REMOVE_INSTRUCTIONS
+IMAGE_OF_SHADOWSOCKS="ghcr.io/shadowsocks/ssserver-rust:latest"
+IMAGE_OF_CLOUDFLARED="cloudflare/cloudflared:latest"
+
 
 #############################
 ###   Helping functions   ###
@@ -161,7 +164,7 @@ remove="
 REMOVE_INSTRUCTIONS+="${remove}"
 clear -x
 if confirm "Should this server be accessible via Shadowsocks?"; then
-  install_docker
+  install_docker && docker pull "${IMAGE_OF_SHADOWSOCKS}"
   # Generate missing settings and load the settings
   if test ! -e "${ROOT}/settings/shadowsocks"; then
     settings="shadowsocks_secret='$(head -c 10 /dev/urandom | base64)'\n"
@@ -179,7 +182,7 @@ if confirm "Should this server be accessible via Shadowsocks?"; then
   docker rm --force shadowsocks 2>/dev/null
   docker run --detach --name shadowsocks --restart always --net host \
     --volume "${ROOT}/data/shadowsocks.json:/etc/shadowsocks-rust/config.json" \
-    ghcr.io/shadowsocks/ssserver-rust:latest
+    "${IMAGE_OF_SHADOWSOCKS}"
   # Extend the guide
   details="${shadowsocks_method}:${shadowsocks_secret}@${PUBLIC}:${shadowsocks_port}"
   shadowsocks_url="ss://$(echo -n "${details}" | base64 --wrap=0)#${TITLE}"
@@ -240,12 +243,12 @@ cloudflared_dst="/home/nonroot/.cloudflared/"
 function cloudflared() {
   docker run --rm \
     --volume "${cloudflared_src}:${cloudflared_dst}" \
-    cloudflare/cloudflared:latest "$@"
+    "${IMAGE_OF_CLOUDFLARED}" "$@"
 }
 function cloudflared_service() {
   docker run --detach --name cloudflared --restart always \
     --volume "${cloudflared_src}:${cloudflared_dst}" \
-    cloudflare/cloudflared:latest "$@"
+    "${IMAGE_OF_CLOUDFLARED}" "$@"
 }
 remove="
   # Cloudflare Zero Trust
@@ -263,7 +266,7 @@ cloudflared_dst=${cloudflared_dst}
 $(declare -f cloudflared)"
 clear -x
 if confirm "Should this server be used as a gateway for Cloudflare Zero Trust?"; then
-  install_docker
+  install_docker && docker pull "${IMAGE_OF_CLOUDFLARED}"
   mkdir --parents --mode=777 "${cloudflared_src}"
   # Log in to Cloudflare
   cloudflared tunnel login
