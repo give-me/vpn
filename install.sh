@@ -78,7 +78,7 @@ function package_exists {
 function install_docker() {
   if ! command_exists docker; then
     info "Install Docker\n"
-    curl -sSL https://get.docker.com/ | sh
+    curl -fsSL https://get.docker.com | sh
   fi
 }
 
@@ -213,7 +213,7 @@ if confirm "Should this server be accessible via Outline VPN?"; then
   # Install and run Outline VPN
   url="https://github.com/Jigsaw-Code/outline-server/raw/master"
   url+="/src/server_manager/install_scripts/install_server.sh"
-  docker ps --all | grep shadowbox >/dev/null || bash -c "$(curl -sSL ${url})" -- \
+  docker ps --all | grep shadowbox >/dev/null || bash -c "$(curl -fsSL ${url})" -- \
     --hostname="${PUBLIC}" \
     --api-port="${outline_api_port}" \
     --keys-port="${outline_keys_port}"
@@ -316,7 +316,7 @@ remove="
 REMOVE_INSTRUCTIONS+="${remove}"
 # Install NordVPN
 if ! command_exists nordvpn; then
-  curl -sSL https://downloads.nordcdn.com/apps/linux/install.sh | sh
+  curl -fsSL https://downloads.nordcdn.com/apps/linux/install.sh | sh
 fi
 # Install an unmentioned dependency
 if ! package_exists wireguard-tools; then
@@ -351,7 +351,7 @@ done)
 nordvpn whitelist add subnet ${CIDR}
 nordvpn set autoconnect on
 nordvpn set killswitch on
-nordvpn set dns 1.1.1.1
+nordvpn set dns 1.1.1.1 8.8.8.8
 nordvpn set technology NordLynx
 log \"Connect VPN\"
 ${vpn} || {
@@ -388,7 +388,7 @@ cat >"${TASK_TO_START}" <<EOL
 #!/bin/sh
 export PATH=${PATH}
 log() { echo "\$(date) - \${1}" >> "/var/log/${TITLE}.log"; }
-check() { ping -q -w 5 1.1.1.1 || return 1; }
+check() { ping -q -w 3 1.1.1.1 || ping -q -w 3 8.8.8.8 || return 1; }
 log "Wait some time and boot up"; sleep 10;
 # Enable BBR to improve network performance
 sysctl net.core.default_qdisc=fq
