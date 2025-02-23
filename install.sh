@@ -357,15 +357,14 @@ fi
 clear -x
 while ! nordvpn account >/dev/null; do
   info "Please, do the following:\n"
-  info "1) Log you in at https://my.nordaccount.com/dashboard/nordvpn/\n"
-  info "2) Find a section named \"Access token\" (Manual setup / Set up NordVPN manually)\n"
-  info "3) Generate new token and past the token below (non-expirable token is better)\n"
+  info "1) Log you in at https://my.nordaccount.com/dashboard/nordvpn/access-tokens/\n"
+  info "2) Generate new token and past the token below (non-expirable token is better)\n"
   prompt "Specify the token" && nordvpn login --token "${REPLY}" || :
 done
 # Let choose a country or group as prior
 vpn="nordvpn connect"
 clear -x
-if confirm "Do you like to force NordVPN to choose a specific country?"; then
+if confirm "Would you like to force NordVPN to choose a specific country?"; then
   info "Available countries:\n" && nordvpn countries
   info "Available groups:\n" && nordvpn groups
   prompt "Specify a country or group" && prior="${REPLY}"
@@ -465,5 +464,7 @@ EOL
 # Make all the tasks executable
 chmod +x "${ROOT}/bin/"*
 
-# Notify about following actions
-clear -x && info "NordVPN Gateway\n\n" && echo -e ${GUIDE}
+# Save the guide and notify about following actions
+clear -x && GUIDE="$(info "NordVPN Gateway " "v. 0.10")\n\n${GUIDE}"
+echo -e ${GUIDE} | sed 's/\x1B\[[0-9;]*[JKmsu]//g' > "${ROOT}/guide.txt"
+echo -e ${GUIDE}
