@@ -167,8 +167,31 @@ if confirm "Should this server be accessible via Shadowsocks?"; then
   install_docker && docker pull "${IMAGE_OF_SHADOWSOCKS}"
   # Generate missing settings and load the settings
   if test ! -e "${ROOT}/settings/shadowsocks"; then
-    settings="shadowsocks_secret='$(head -c 10 /dev/urandom | base64)'\n"
-    settings+="shadowsocks_port=$(generate_port)"
+    settings="shadowsocks_secret='$(openssl rand -base64 20)'\n"
+    clear -x
+    if confirm "Would you like to make the connection look like an allowed protocol?"; then
+      declare -A protocols=(
+        ["HTTP request"]="POST%20|80 – http"
+        ["HTTP response"]="HTTP%2F1.1%20|80 – http"
+        ["DNS-over-TCP request"]="%05%C3%9C_%C3%A0%01%20|53 – dns"
+        ["SSH"]='SSH-2.0%0D%0A|22 – ssh, 830 – netconf-ssh, 4334 – netconf-ch-ssh, 5162 – snmpssh-trap'
+        ["TLS ClientHello"]='%16%03%01%00%C2%A8%01%01|443 – https, 463 – smtps, 563 – nntps, 636 – ldaps, 989 – ftps-data, 990 – ftps, 993 – imaps, 995 – pop3s, 5223 – Apple APN, 5228 – Play Store, 5349 – turns'
+        ["TLS ServerHello"]='%16%03%03%40%00%02|443 – https, 463 – smtps, 563 – nntps, 636 – ldaps, 989 – ftps-data, 990 – ftps, 993 – imaps, 995 – pop3s, 5223 – Apple APN, 5228 – Play Store, 5349 – turns'
+        ["TLS Application Data"]='%13%03%03%3F|443 – https, 463 – smtps, 563 – nntps, 636 – ldaps, 989 – ftps-data, 990 – ftps, 993 – imaps, 995 – pop3s, 5223 – Apple APN, 5228 – Play Store, 5349 – turns'
+      )
+      echo "Choose an allowed protocol to emulate:"
+      select protocol in "${!protocols[@]}"; do
+        test -n "${protocol}" && echo && break
+      done
+      IFS='|' read -r prefix ports <<< "${protocols[${protocol}]}"
+      echo -e "Recommended ports for ${protocol}: ${ports}\n"
+      prompt "Specify a port from recommended or another one" && {
+        settings+="shadowsocks_prefix='${prefix}'\n"
+        settings+="shadowsocks_port=${REPLY}"
+      }
+    else
+      settings+="shadowsocks_port=$(generate_port)"
+    fi
     echo -e "${settings}" >"${ROOT}/settings/shadowsocks"
   fi
   source "${ROOT}/settings/shadowsocks"
@@ -184,8 +207,11 @@ if confirm "Should this server be accessible via Shadowsocks?"; then
     --volume "${ROOT}/data/shadowsocks.json:/etc/shadowsocks-rust/config.json" \
     "${IMAGE_OF_SHADOWSOCKS}"
   # Extend the guide
-  details="${shadowsocks_method}:${shadowsocks_secret}@${PUBLIC}:${shadowsocks_port}"
-  shadowsocks_url="ss://$(echo -n "${details}" | base64 --wrap=0)#${TITLE}"
+  userinfo="${shadowsocks_method}:${shadowsocks_secret}"
+  userinfo="$(echo -n "${userinfo}" | base64 --wrap=0)"
+  shadowsocks_url="ss://${userinfo}@${PUBLIC}:${shadowsocks_port}"
+  test -n "${shadowsocks_prefix+x}" && shadowsocks_url+="/?prefix=${shadowsocks_prefix}"
+  shadowsocks_url+="#${TITLE}"
   GUIDE+="$(info "In order to access via Shadowsocks, do the following:")\n"
   GUIDE+="$(info "1) Ensure that the port is open:" "${shadowsocks_port} (TCP and UDP)")\n"
   GUIDE+="$(info "2) Configure Outline Client with the following URL:" "${shadowsocks_url}")\n\n"
