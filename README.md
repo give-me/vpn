@@ -10,11 +10,11 @@ protection including hiding your IP address and other cool features.
 
 There are three channels that can be used individually or jointly to access the gateway from your devices:
 
-| Channel               | Difficulty | Access control | Public access to a server  | Requirements                                                                                                                           |
-|-----------------------|------------|----------------|----------------------------|----------------------------------------------------------------------------------------------------------------------------------------|
-| Shadowsocks           | Low        | One shared key | Required by IP or a domain | Install [Outline Client App](https://getoutline.org/get-started/)                                                                      |
-| Outline               | Normal     | Personal keys  | Required by IP or a domain | Install [Outline Manager and Outline Client App](https://getoutline.org/get-started/)                                                  |
-| Cloudflare Zero Trust | High       | Advanced       | Not required               | Get a free account for [Cloudflare Zero Trust](https://www.cloudflare.com/zero-trust/) and install [WARP Client App](https://1.1.1.1/) |
+| Channel                                | Difficulty | Access control | Public access to a server  | Requirements                                                                                                                           |
+|----------------------------------------|------------|----------------|----------------------------|----------------------------------------------------------------------------------------------------------------------------------------|
+| Shadowsocks (optional traffic masking) | Low        | One shared key | Required by IP or a domain | Install [Outline Client App](https://getoutline.org/get-started/)                                                                      |
+| Outline                                | Normal     | Personal keys  | Required by IP or a domain | Install [Outline Manager and Outline Client App](https://getoutline.org/get-started/)                                                  |
+| Cloudflare Zero Trust                  | High       | Advanced       | Not required               | Get a free account for [Cloudflare Zero Trust](https://www.cloudflare.com/zero-trust/) and install [WARP Client App](https://1.1.1.1/) |
 
 > If your server has an ARM processor, you should not choose Outline as a channel during installation because vanilla
 > Outline does not support ARM processors. Other channels work perfectly with ARM processors.
