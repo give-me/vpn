@@ -17,8 +17,9 @@ declare VPN_UP
 declare VPN_REPAIR
 declare REMOVE_REQUIREMENTS
 declare REMOVE_INSTRUCTIONS
-IMAGE_OF_SHADOWSOCKS="ghcr.io/shadowsocks/ssserver-rust:latest"
-IMAGE_OF_CLOUDFLARED="cloudflare/cloudflared:latest"
+CIPHER="chacha20-ietf-poly1305"
+SS_IMAGE="ghcr.io/shadowsocks/ssserver-rust:latest"
+CF_IMAGE="cloudflare/cloudflared:latest"
 
 
 #############################
@@ -89,6 +90,11 @@ function generate_port() {
   echo $((1024 + RANDOM + (RANDOM % 2) * 30000))
 }
 
+function generate_rand() {
+  local length=50
+  openssl rand -base64 ${length} | tr -dc 'A-Za-z0-9' | head -c ${length}
+}
+
 ################################
 ###   Setting up this tool   ###
 ################################
@@ -109,6 +115,14 @@ GUIDE+="$(info "Interface ${DEV} was detected as default:")\n"
 GUIDE+="$(info "- IP:" "${IP}")\n"
 GUIDE+="$(info "- CIDR:" "${CIDR}")\n"
 GUIDE+="$(info "- Gateway:" "${GW}")\n\n"
+
+#------------------------
+# Installing dependencies
+#------------------------
+
+if ! package_exists yq; then
+  apt install yq -y
+fi
 
 #----------------------
 # Preparing file system
@@ -141,7 +155,7 @@ done
 #---------------------------
 
 clear -x
-if confirm "Should ports for HTTP and HTTPS be allowed?"; then
+if confirm "Should ports for HTTP and HTTPS be allowed for other needs?"; then
   TCP_PORTS+=(80 443)
 fi
 
@@ -152,23 +166,23 @@ fi
 REMOVE_REQUIREMENTS+="
 $(declare -f command_exists)"
 
-#-----------------------
-# Standalone Shadowsocks
-#-----------------------
+#----------------------------------------
+# Shadowsocks (traffic masking available)
+#----------------------------------------
 
+id="shadowsocks-ss"
 remove="
   # Shadowsocks
-  command_exists docker && docker rm --force shadowsocks 2>/dev/null
-  rm --force ${ROOT}/settings/shadowsocks
-  rm --force ${ROOT}/data/shadowsocks.json"
+  command_exists docker && docker rm --force ${id} 2>/dev/null
+  rm --force ${ROOT}/settings/${id}
+  rm --force ${ROOT}/data/${id}.json"
 REMOVE_INSTRUCTIONS+="${remove}"
 clear -x
 if confirm "Should this server be accessible via Shadowsocks?"; then
-  install_docker && docker pull "${IMAGE_OF_SHADOWSOCKS}"
+  install_docker && docker pull "${SS_IMAGE}"
   # Generate missing settings and load the settings
-  if test ! -e "${ROOT}/settings/shadowsocks"; then
-    settings="shadowsocks_secret='$(openssl rand -base64 20)'\n"
-    clear -x
+  if test ! -e "${ROOT}/settings/${id}"; then
+    settings="secret='$(generate_rand)'\n"
     if confirm "Would you like to make the connection look like an allowed protocol?"; then
       declare -A protocols=(
         ["HTTP request"]="POST%20|80 – http"
@@ -186,59 +200,60 @@ if confirm "Should this server be accessible via Shadowsocks?"; then
       IFS='|' read -r prefix ports <<< "${protocols[${protocol}]}"
       echo -e "Recommended ports for ${protocol}: ${ports}\n"
       prompt "Specify a port from recommended or another one" && {
-        settings+="shadowsocks_prefix='${prefix}'\n"
-        settings+="shadowsocks_port=${REPLY}"
+        settings+="prefix='${prefix}'\n"
+        settings+="port=${REPLY}"
       }
     else
-      settings+="shadowsocks_port=$(generate_port)"
+      settings+="port=$(generate_port)"
     fi
-    echo -e "${settings}" >"${ROOT}/settings/shadowsocks"
+    echo -e "${settings}" >"${ROOT}/settings/${id}"
   fi
-  source "${ROOT}/settings/shadowsocks"
-  ALL_PORTS+=("${shadowsocks_port}")
+  source "${ROOT}/settings/${id}"
   # Create a config
-  shadowsocks_method="chacha20-ietf-poly1305"
-  config="{ 'server': '0.0.0.0', 'server_port': ${shadowsocks_port},"
-  config+=" 'password': '${shadowsocks_secret}', 'method': '${shadowsocks_method}' }"
-  echo -e "${config}" >"${ROOT}/data/shadowsocks.json"
+  config="server: 0.0.0.0\n"
+  config+="server_port: ${port}\n"
+  config+="password: ${secret}\n"
+  config+="method: ${CIPHER}"
+  echo -e "${config}" | yq >"${ROOT}/data/${id}.json"
   # Run a new container
-  docker rm --force shadowsocks 2>/dev/null
-  docker run --detach --name shadowsocks --restart always --net host \
-    --volume "${ROOT}/data/shadowsocks.json:/etc/shadowsocks-rust/config.json" \
-    "${IMAGE_OF_SHADOWSOCKS}"
+  ALL_PORTS+=("${port}")
+  docker rm --force "${id}" 2>/dev/null
+  docker run --detach --name "${id}" --restart always --net host \
+    --volume "${ROOT}/data/${id}.json:/etc/shadowsocks-rust/config.json" \
+    "${SS_IMAGE}"
   # Extend the guide
-  userinfo="${shadowsocks_method}:${shadowsocks_secret}"
+  userinfo="${CIPHER}:${secret}"
   userinfo="$(echo -n "${userinfo}" | base64 --wrap=0)"
-  shadowsocks_url="ss://${userinfo}@${PUBLIC}:${shadowsocks_port}"
-  test -n "${shadowsocks_prefix+x}" && shadowsocks_url+="/?prefix=${shadowsocks_prefix}"
-  shadowsocks_url+="#${TITLE}"
+  url="ss://${userinfo}@${PUBLIC}:${port}"
+  test -n "${prefix+x}" && url+="/?prefix=${prefix}"
+  url+="#${TITLE}"
   GUIDE+="$(info "In order to access via Shadowsocks, do the following:")\n"
-  GUIDE+="$(info "1) Ensure that the port is open:" "${shadowsocks_port} (TCP and UDP)")\n"
-  GUIDE+="$(info "2) Configure Outline Client with the following URL:" "${shadowsocks_url}")\n\n"
+  GUIDE+="$(info "1) Ensure that the port is open:" "${port} (TCP and UDP)")\n"
+  GUIDE+="$(info "2) Configure Outline Client with the following URL:" "${url}")\n\n"
 else eval "${remove}"; fi
 
-#------------
-# Outline VPN
-#------------
+#-----------------------------
+# Shadowsocks with Outline VPN
+#-----------------------------
 
 remove="
-  # Outline VPN
+  # Shadowsocks with Outline VPN
   command_exists docker && docker rm --force shadowbox watchtower 2>/dev/null
   rm --recursive --force /opt/outline
   rm --force ${ROOT}/settings/outline"
 REMOVE_INSTRUCTIONS+="${remove}"
 clear -x
-if confirm "Should this server be accessible via Outline VPN?"; then
+if confirm "Should this server be accessible via Shadowsocks with Outline VPN?"; then
   install_docker
   # Generate missing numbers of public ports and load the numbers
   if test ! -e "${ROOT}/settings/outline"; then
-    settings="outline_api_port=$(generate_port)\n"
-    settings+="outline_keys_port=$(generate_port)"
+    settings="api_port=$(generate_port)\n"
+    settings+="keys_port=$(generate_port)"
     echo -e "${settings}" >"${ROOT}/settings/outline"
   fi
   source "${ROOT}/settings/outline"
-  TCP_PORTS+=("${outline_api_port}")
-  ALL_PORTS+=("${outline_keys_port}")
+  TCP_PORTS+=("${api_port}")
+  ALL_PORTS+=("${keys_port}")
   # Install and run Outline VPN
   url="https://github.com/Jigsaw-Code/outline-server/raw/master"
   url+="/src/server_manager/install_scripts/install_server.sh"
@@ -246,18 +261,20 @@ if confirm "Should this server be accessible via Outline VPN?"; then
     SB_DEFAULT_SERVER_NAME="${TITLE}" \
     bash -c "$(curl -fsSL ${url})" -- \
     --hostname="${PUBLIC}" \
-    --api-port="${outline_api_port}" \
-    --keys-port="${outline_keys_port}"
+    --api-port="${api_port}" \
+    --keys-port="${keys_port}"
   # Extend the guide if Outline VPN has been configured
   secret="/opt/outline/access.txt"
   api_url=$(grep "apiUrl" "${secret}" | sed "s/apiUrl://" || :)
   cert_sha=$(grep "certSha256" "${secret}" | sed "s/certSha256://" || :)
-  details="{\"apiUrl\":\"${api_url}\",\"certSha256\":\"${cert_sha}\"}"
+  details="apiUrl: ${api_url}\n"
+  details+="certSha256: ${cert_sha}"
+  details=$(echo -e "${details}" | yq --indent 0)
   if test "${api_url}" -a "${cert_sha}"; then
     GUIDE+="$(info "In order to access via Outline VPN, do the following:")\n"
     GUIDE+="$(info "1) Ensure that ports are open:")\n"
-    GUIDE+="$(info "- management port:" "${outline_api_port} (TCP)")\n"
-    GUIDE+="$(info "- access key port:" "${outline_keys_port} (TCP and UDP)")\n"
+    GUIDE+="$(info "- management port:" "${api_port} (TCP)")\n"
+    GUIDE+="$(info "- access key port:" "${keys_port} (TCP and UDP)")\n"
     GUIDE+="$(info "2) Configure Outline Manager with the following string:" "${details}")\n\n"
   fi
 else eval "${remove}"; fi
@@ -271,12 +288,12 @@ cloudflared_dst="/home/nonroot/.cloudflared/"
 function cloudflared() {
   docker run --rm \
     --volume "${cloudflared_src}:${cloudflared_dst}" \
-    "${IMAGE_OF_CLOUDFLARED}" "$@"
+    "${CF_IMAGE}" "$@"
 }
 function cloudflared_service() {
   docker run --detach --name cloudflared --restart always \
     --volume "${cloudflared_src}:${cloudflared_dst}" \
-    "${IMAGE_OF_CLOUDFLARED}" "$@"
+    "${CF_IMAGE}" "$@"
 }
 remove="
   # Cloudflare Zero Trust
@@ -294,7 +311,7 @@ cloudflared_dst=${cloudflared_dst}
 $(declare -f cloudflared)"
 clear -x
 if confirm "Should this server be used as a gateway for Cloudflare Zero Trust?"; then
-  install_docker && docker pull "${IMAGE_OF_CLOUDFLARED}"
+  install_docker && docker pull "${CF_IMAGE}"
   mkdir --parents --mode=777 "${cloudflared_src}"
   # Log in to Cloudflare
   cloudflared tunnel login
@@ -302,7 +319,7 @@ if confirm "Should this server be used as a gateway for Cloudflare Zero Trust?";
   if cloudflared tunnel list --name "${TITLE}" | grep --quiet "${TITLE}"; then
     info "Found the tunnel \"${TITLE}\" at Cloudflare Zero Trust\n"
     tunnel=$(cloudflared tunnel list --name "${TITLE}" --output yaml)
-    tunnel=$(echo -e "${tunnel}" | head -n 1 | awk '{print $3}')
+    tunnel=$(echo -e "${tunnel}" | yq '.[0].id' | tr -d '"')
     info "Its ID is \"${tunnel}\"\n"
     if test ! -e "${ROOT}/data/cloudflared/${tunnel}.json"; then
       info "Delete the tunnel because its certificate missed\n"
@@ -329,7 +346,7 @@ if confirm "Should this server be used as a gateway for Cloudflare Zero Trust?";
   cloudflared_service tunnel run
   # Extend the guide
   GUIDE+="$(info "In order to access via Cloudflare Zero Trust, do the following:")\n"
-  GUIDE+="$(info "1) Download Cloudflare WARP client")\n"
+  GUIDE+="$(info "1) Download Cloudflare One")\n"
   GUIDE+="$(info "2) Log users in to your Zero Trust organization")\n\n"
 else eval "${remove}"; fi
 
@@ -466,5 +483,5 @@ chmod +x "${ROOT}/bin/"*
 
 # Save the guide and notify about following actions
 clear -x && GUIDE="$(info "NordVPN Gateway " "v. 0.10")\n\n${GUIDE}"
-echo -e ${GUIDE} | sed 's/\x1B\[[0-9;]*[JKmsu]//g' > "${ROOT}/guide.txt"
+echo -e ${GUIDE} | sed 's/\x1B\[[0-9;]*[JKmsu]//g' >"${ROOT}/guide.txt"
 echo -e ${GUIDE}
