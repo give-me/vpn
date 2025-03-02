@@ -17,6 +17,9 @@ declare VPN_UP
 declare VPN_REPAIR
 declare REMOVE_REQUIREMENTS
 declare REMOVE_INSTRUCTIONS
+IMAGE_OF_SHADOWSOCKS="ghcr.io/shadowsocks/ssserver-rust:latest"
+IMAGE_OF_CLOUDFLARED="cloudflare/cloudflared:latest"
+
 
 #############################
 ###   Helping functions   ###
@@ -78,7 +81,7 @@ function package_exists {
 function install_docker() {
   if ! command_exists docker; then
     info "Install Docker\n"
-    curl -sSL https://get.docker.com/ | sh
+    curl -fsSL https://get.docker.com | sh
   fi
 }
 
@@ -161,11 +164,34 @@ remove="
 REMOVE_INSTRUCTIONS+="${remove}"
 clear -x
 if confirm "Should this server be accessible via Shadowsocks?"; then
-  install_docker
+  install_docker && docker pull "${IMAGE_OF_SHADOWSOCKS}"
   # Generate missing settings and load the settings
   if test ! -e "${ROOT}/settings/shadowsocks"; then
-    settings="shadowsocks_secret='$(head -c 10 /dev/urandom | base64)'\n"
-    settings+="shadowsocks_port=$(generate_port)"
+    settings="shadowsocks_secret='$(openssl rand -base64 20)'\n"
+    clear -x
+    if confirm "Would you like to make the connection look like an allowed protocol?"; then
+      declare -A protocols=(
+        ["HTTP request"]="POST%20|80 – http"
+        ["HTTP response"]="HTTP%2F1.1%20|80 – http"
+        ["DNS-over-TCP request"]="%05%C3%9C_%C3%A0%01%20|53 – dns"
+        ["SSH"]='SSH-2.0%0D%0A|22 – ssh, 830 – netconf-ssh, 4334 – netconf-ch-ssh, 5162 – snmpssh-trap'
+        ["TLS ClientHello"]='%16%03%01%00%C2%A8%01%01|443 – https, 463 – smtps, 563 – nntps, 636 – ldaps, 989 – ftps-data, 990 – ftps, 993 – imaps, 995 – pop3s, 5223 – Apple APN, 5228 – Play Store, 5349 – turns'
+        ["TLS ServerHello"]='%16%03%03%40%00%02|443 – https, 463 – smtps, 563 – nntps, 636 – ldaps, 989 – ftps-data, 990 – ftps, 993 – imaps, 995 – pop3s, 5223 – Apple APN, 5228 – Play Store, 5349 – turns'
+        ["TLS Application Data"]='%13%03%03%3F|443 – https, 463 – smtps, 563 – nntps, 636 – ldaps, 989 – ftps-data, 990 – ftps, 993 – imaps, 995 – pop3s, 5223 – Apple APN, 5228 – Play Store, 5349 – turns'
+      )
+      echo "Choose an allowed protocol to emulate:"
+      select protocol in "${!protocols[@]}"; do
+        test -n "${protocol}" && echo && break
+      done
+      IFS='|' read -r prefix ports <<< "${protocols[${protocol}]}"
+      echo -e "Recommended ports for ${protocol}: ${ports}\n"
+      prompt "Specify a port from recommended or another one" && {
+        settings+="shadowsocks_prefix='${prefix}'\n"
+        settings+="shadowsocks_port=${REPLY}"
+      }
+    else
+      settings+="shadowsocks_port=$(generate_port)"
+    fi
     echo -e "${settings}" >"${ROOT}/settings/shadowsocks"
   fi
   source "${ROOT}/settings/shadowsocks"
@@ -179,10 +205,13 @@ if confirm "Should this server be accessible via Shadowsocks?"; then
   docker rm --force shadowsocks 2>/dev/null
   docker run --detach --name shadowsocks --restart always --net host \
     --volume "${ROOT}/data/shadowsocks.json:/etc/shadowsocks-rust/config.json" \
-    ghcr.io/shadowsocks/ssserver-rust:latest
+    "${IMAGE_OF_SHADOWSOCKS}"
   # Extend the guide
-  details="${shadowsocks_method}:${shadowsocks_secret}@${PUBLIC}:${shadowsocks_port}"
-  shadowsocks_url="ss://$(echo -n "${details}" | base64 --wrap=0)#${TITLE}"
+  userinfo="${shadowsocks_method}:${shadowsocks_secret}"
+  userinfo="$(echo -n "${userinfo}" | base64 --wrap=0)"
+  shadowsocks_url="ss://${userinfo}@${PUBLIC}:${shadowsocks_port}"
+  test -n "${shadowsocks_prefix+x}" && shadowsocks_url+="/?prefix=${shadowsocks_prefix}"
+  shadowsocks_url+="#${TITLE}"
   GUIDE+="$(info "In order to access via Shadowsocks, do the following:")\n"
   GUIDE+="$(info "1) Ensure that the port is open:" "${shadowsocks_port} (TCP and UDP)")\n"
   GUIDE+="$(info "2) Configure Outline Client with the following URL:" "${shadowsocks_url}")\n\n"
@@ -213,7 +242,9 @@ if confirm "Should this server be accessible via Outline VPN?"; then
   # Install and run Outline VPN
   url="https://github.com/Jigsaw-Code/outline-server/raw/master"
   url+="/src/server_manager/install_scripts/install_server.sh"
-  docker ps --all | grep shadowbox >/dev/null || bash -c "$(curl -sSL ${url})" -- \
+  docker ps --all | grep shadowbox >/dev/null ||
+    SB_DEFAULT_SERVER_NAME="${TITLE}" \
+    bash -c "$(curl -fsSL ${url})" -- \
     --hostname="${PUBLIC}" \
     --api-port="${outline_api_port}" \
     --keys-port="${outline_keys_port}"
@@ -240,12 +271,12 @@ cloudflared_dst="/home/nonroot/.cloudflared/"
 function cloudflared() {
   docker run --rm \
     --volume "${cloudflared_src}:${cloudflared_dst}" \
-    cloudflare/cloudflared:latest "$@"
+    "${IMAGE_OF_CLOUDFLARED}" "$@"
 }
 function cloudflared_service() {
   docker run --detach --name cloudflared --restart always \
     --volume "${cloudflared_src}:${cloudflared_dst}" \
-    cloudflare/cloudflared:latest "$@"
+    "${IMAGE_OF_CLOUDFLARED}" "$@"
 }
 remove="
   # Cloudflare Zero Trust
@@ -263,7 +294,7 @@ cloudflared_dst=${cloudflared_dst}
 $(declare -f cloudflared)"
 clear -x
 if confirm "Should this server be used as a gateway for Cloudflare Zero Trust?"; then
-  install_docker
+  install_docker && docker pull "${IMAGE_OF_CLOUDFLARED}"
   mkdir --parents --mode=777 "${cloudflared_src}"
   # Log in to Cloudflare
   cloudflared tunnel login
@@ -295,7 +326,7 @@ if confirm "Should this server be used as a gateway for Cloudflare Zero Trust?";
   echo -e "${config}" >"${ROOT}/data/cloudflared/config.yml"
   # Run a new container
   docker rm --force cloudflared 2>/dev/null
-  cloudflared_service tunnel run --force
+  cloudflared_service tunnel run
   # Extend the guide
   GUIDE+="$(info "In order to access via Cloudflare Zero Trust, do the following:")\n"
   GUIDE+="$(info "1) Download Cloudflare WARP client")\n"
@@ -316,7 +347,7 @@ remove="
 REMOVE_INSTRUCTIONS+="${remove}"
 # Install NordVPN
 if ! command_exists nordvpn; then
-  curl -sSL https://downloads.nordcdn.com/apps/linux/install.sh | sh
+  curl -fsSL https://downloads.nordcdn.com/apps/linux/install.sh | sh
 fi
 # Install an unmentioned dependency
 if ! package_exists wireguard-tools; then
@@ -326,15 +357,14 @@ fi
 clear -x
 while ! nordvpn account >/dev/null; do
   info "Please, do the following:\n"
-  info "1) Log you in at https://my.nordaccount.com/dashboard/nordvpn/\n"
-  info "2) Find a section named \"Access token\" (Manual setup / Set up NordVPN manually)\n"
-  info "3) Generate new token and past the token below (non-expirable token is better)\n"
+  info "1) Log you in at https://my.nordaccount.com/dashboard/nordvpn/access-tokens/\n"
+  info "2) Generate new token and past the token below (non-expirable token is better)\n"
   prompt "Specify the token" && nordvpn login --token "${REPLY}" || :
 done
 # Let choose a country or group as prior
 vpn="nordvpn connect"
 clear -x
-if confirm "Do you like to force NordVPN to choose a specific country?"; then
+if confirm "Would you like to force NordVPN to choose a specific country?"; then
   info "Available countries:\n" && nordvpn countries
   info "Available groups:\n" && nordvpn groups
   prompt "Specify a country or group" && prior="${REPLY}"
@@ -351,7 +381,7 @@ done)
 nordvpn whitelist add subnet ${CIDR}
 nordvpn set autoconnect on
 nordvpn set killswitch on
-nordvpn set dns 1.1.1.1
+nordvpn set dns 1.1.1.1 8.8.8.8
 nordvpn set technology NordLynx
 log \"Connect VPN\"
 ${vpn} || {
@@ -388,7 +418,7 @@ cat >"${TASK_TO_START}" <<EOL
 #!/bin/sh
 export PATH=${PATH}
 log() { echo "\$(date) - \${1}" >> "/var/log/${TITLE}.log"; }
-check() { ping -q -w 5 1.1.1.1 || return 1; }
+check() { ping -q -w 3 1.1.1.1 || ping -q -w 3 8.8.8.8 || return 1; }
 log "Wait some time and boot up"; sleep 10;
 # Enable BBR to improve network performance
 sysctl net.core.default_qdisc=fq
@@ -434,5 +464,7 @@ EOL
 # Make all the tasks executable
 chmod +x "${ROOT}/bin/"*
 
-# Notify about following actions
-clear -x && info "NordVPN Gateway\n\n" && echo -e ${GUIDE}
+# Save the guide and notify about following actions
+clear -x && GUIDE="$(info "NordVPN Gateway " "v. 0.10")\n\n${GUIDE}"
+echo -e ${GUIDE} | sed 's/\x1B\[[0-9;]*[JKmsu]//g' > "${ROOT}/guide.txt"
+echo -e ${GUIDE}
