@@ -19,6 +19,7 @@ declare REMOVE_REQUIREMENTS
 declare REMOVE_INSTRUCTIONS
 CIPHER="chacha20-ietf-poly1305"
 SS_IMAGE="ghcr.io/shadowsocks/ssserver-rust:latest"
+WS_IMAGE="ghcr.io/give-me/outlinecaddy:latest"
 CF_IMAGE="cloudflare/cloudflared:latest"
 
 
@@ -232,6 +233,118 @@ if confirm "Should this server be accessible via Shadowsocks?"; then
   GUIDE+="$(info "2) Configure Outline Client with the following URL:" "${url}")\n\n"
 else eval "${remove}"; fi
 
+#----------------------------
+# Shadowsocks-over-WebSockets
+#----------------------------
+
+id="shadowsocks-ws"
+remove="
+  # Shadowsocks-over-WebSockets
+  command_exists docker && {
+    docker rm --force ${id} 2>/dev/null
+    docker volume rm --force ${id} 2>/dev/null
+  }
+  rm --force ${ROOT}/settings/${id}
+  rm --force ${ROOT}/data/${id}.json"
+REMOVE_INSTRUCTIONS+="${remove}"
+clear -x
+if ! [[ "${PUBLIC}" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]] \
+  && confirm "Should this server be accessible via Shadowsocks-over-WebSockets?"; then
+  install_docker && docker pull "${WS_IMAGE}"
+  # Generate missing settings and load the settings
+  if test ! -e "${ROOT}/settings/${id}"; then
+    settings="key_path='$(generate_rand)'\n"
+    settings+="tcp_path='$(generate_rand)'\n"
+    settings+="udp_path='$(generate_rand)'\n"
+    settings+="secret='$(generate_rand)'"
+    echo -e "${settings}" >"${ROOT}/settings/${id}"
+  fi
+  source "${ROOT}/settings/${id}"
+  # Create a key for Outline Client
+  key="transport:\n"
+  key+="  \$type: tcpudp\n"
+  key+="  tcp:\n"
+  key+="    \$type: shadowsocks\n"
+  key+="    endpoint:\n"
+  key+="      \$type: websocket\n"
+  key+="      url: wss://${PUBLIC}/${tcp_path}\n"
+  key+="    cipher: ${CIPHER}\n"
+  key+="    secret: ${secret}\n"
+  key+="  udp:\n"
+  key+="    \$type: shadowsocks\n"
+  key+="    endpoint:\n"
+  key+="      \$type: websocket\n"
+  key+="      url: wss://${PUBLIC}/${udp_path}\n"
+  key+="    cipher: ${CIPHER}\n"
+  key+="    secret: ${secret}"
+  # Create a config for Caddy with outline
+  config="apps:\n"
+  config+="  outline:\n"
+  config+="    shadowsocks:\n"
+  config+="      replay_history: 10000\n"
+  config+="    connection_handlers:\n"
+  config+="    - name: ss\n"
+  config+="      handle:\n"
+  config+="        handler: shadowsocks\n"
+  config+="        keys:\n"
+  config+="        - id: key\n"
+  config+="          cipher: ${CIPHER}\n"
+  config+="          secret: ${secret}\n"
+  config+="  http:\n"
+  config+="    servers:\n"
+  config+="      server:\n"
+  config+="        listen: [':443']\n"
+  config+="        routes:\n"
+  config+="        - match:\n"
+  config+="          - host: ['${PUBLIC}']\n"
+  config+="            path: ['/${tcp_path}']\n"
+  config+="          handle:\n"
+  config+="          - handler: websocket2layer4\n"
+  config+="            connection_handler: ss\n"
+  config+="            type: stream\n"
+  config+="        - match:\n"
+  config+="          - host: ['${PUBLIC}']\n"
+  config+="            path: ['/${udp_path}']\n"
+  config+="          handle:\n"
+  config+="          - handler: websocket2layer4\n"
+  config+="            connection_handler: ss\n"
+  config+="            type: packet\n"
+  # Add the key to the config
+  config+="        - match:\n"
+  config+="          - host: ['${PUBLIC}']\n"
+  config+="            path: ['/${key_path}']\n"
+  config+="          handle:\n"
+  config+="          - handler: static_response\n"
+  config+="            body: |\n"
+  spaces=$(echo -e "${config}" | tail -n 2 | grep -o '^ *')
+  config+="$(echo -e "${key}" | sed "s/^/${spaces}  /")\n"
+  # Add optional redirect for other paths
+  if confirm "Would you like to add a redirect from bad paths to another URL?"; then
+    prompt "Specify a URL to redirect to (e.g. https://example.com)" && url="${REPLY}"
+    # Add redirect configuration to Caddy config
+    config+="        - match:\n"
+    config+="          - host: ['${PUBLIC}']\n"
+    config+="          handle:\n"
+    config+="          - handler: static_response\n"
+    config+="            status_code: 302\n"
+    config+="            headers:\n"
+    config+="              Location: [${url}]\n"
+  fi
+  echo -e "${config}" | yq >"${ROOT}/data/${id}.json"
+  # Run a new container
+  ALL_PORTS+=(443)
+  docker rm --force "${id}" 2>/dev/null
+  docker run --detach --name "${id}" --restart always --net host \
+    --volume "${id}:/data" \
+    --volume "${ROOT}/data/${id}.json:/config/caddy/config.json" \
+    "${WS_IMAGE}" caddy run --config /config/caddy/config.json
+  # Extend the guide
+  url="ssconf://${PUBLIC}/${key_path}#${TITLE}"
+  GUIDE+="$(info "In order to access via Shadowsocks-over-WebSockets, do the following:")\n"
+  GUIDE+="$(info "1) Ensure that the port is open:" "443 (TCP and UDP)")\n"
+  GUIDE+="$(info "2) Configure Outline Client with the following URL:" "${url}")\n\n"
+else eval "${remove}"; fi
+
 #-----------------------------
 # Shadowsocks with Outline VPN
 #-----------------------------
@@ -440,6 +553,9 @@ log "Wait some time and boot up"; sleep 10;
 # Enable BBR to improve network performance
 sysctl net.core.default_qdisc=fq
 sysctl net.ipv4.tcp_congestion_control=bbr
+# Increase the maximum buffer sizes
+sysctl -w net.core.rmem_max=7500000
+sysctl -w net.core.wmem_max=7500000
 # Start VPN ${VPN_UP}
 # Configure routing
 ip rule add from ${IP} table 123
@@ -482,6 +598,6 @@ EOL
 chmod +x "${ROOT}/bin/"*
 
 # Save the guide and notify about following actions
-clear -x && GUIDE="$(info "NordVPN Gateway " "v. 0.10")\n\n${GUIDE}"
+clear -x && GUIDE="$(info "NordVPN Gateway " "v. 0.11")\n\n${GUIDE}"
 echo -e ${GUIDE} | sed 's/\x1B\[[0-9;]*[JKmsu]//g' >"${ROOT}/guide.txt"
 echo -e ${GUIDE}
