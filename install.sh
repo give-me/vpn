@@ -326,16 +326,26 @@ if ! [[ "${PUBLIC}" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]] \
   spaces=$(echo -e "${config}" | tail -n 2 | grep -o '^ *')
   config+="$(echo -e "${key}" | sed "s/^/${spaces}  /")\n"
   # Add optional redirect for other paths
-  if confirm "Would you like to add a redirect from bad paths to another URL?"; then
-    prompt "Specify a URL to redirect to (e.g. https://example.com)" && url="${REPLY}"
-    # Add redirect configuration to Caddy config
+  if confirm "Would you like to specify an HTTP status code for bad paths?"; then
+    choose "Choose an HTTP status code for bad paths" \
+      301 "301 – Permanent Redirect" \
+      302 "302 – Temporary Redirect" \
+      401 "401 – Unauthorized" \
+      403 "403 – Forbidden" \
+      404 "404 – Not Found" \
+      500 "500 – Server Error"
+    # Add configuration to Caddy config
     config+="        - match:\n"
     config+="          - host: ['${PUBLIC}']\n"
     config+="          handle:\n"
     config+="          - handler: static_response\n"
-    config+="            status_code: 302\n"
-    config+="            headers:\n"
-    config+="              Location: [${url}]\n"
+    config+="            status_code: ${REPLY}\n"
+    # If redirect code is selected, prompt for a URL
+    if [ "${REPLY}" = 301 ] || [ "${REPLY}" = 302 ]; then
+      prompt "Specify a URL to redirect to (e.g. https://example.com)"
+      config+="            headers:\n"
+      config+="              Location: [${REPLY}]\n"
+    fi
   fi
   echo -e "${config}" | yq >"${ROOT}/data/${id}.json"
   # Run a new container
