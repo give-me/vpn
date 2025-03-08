@@ -6,8 +6,8 @@ set -o nounset
 
 TITLE="vpn-gateway"
 ROOT="/opt/${TITLE}"
-TCP_PORTS=(22) # TCP only
-ALL_PORTS=()   # TCP and UDP
+TCP_PORTS=(22)
+UDP_PORTS=()
 TASK_TO_START="${ROOT}/bin/gateway.sh"
 TASK_TO_REINSTALL="${ROOT}/bin/reinstall.sh"
 TASK_TO_UNINSTALL="${ROOT}/bin/uninstall.sh"
@@ -175,6 +175,7 @@ done
 clear -x
 if confirm "Should ports for HTTP and HTTPS be allowed for other needs?"; then
   TCP_PORTS+=(80 443)
+  UDP_PORTS+=(80 443)
 fi
 
 ##########################################
@@ -224,7 +225,8 @@ if confirm "Should this server be accessible via Shadowsocks?"; then
   config+="method: ${CIPHER}"
   echo -e "${config}" | yq >"${ROOT}/data/${id}.json"
   # Run a new container
-  ALL_PORTS+=("${port}")
+  TCP_PORTS+=("${port}")
+  UDP_PORTS+=("${port}")
   docker rm --force "${id}" 2>/dev/null
   docker run --detach --name "${id}" --restart always --net host \
     --volume "${ROOT}/data/${id}.json:/etc/shadowsocks-rust/config.json" \
@@ -349,7 +351,8 @@ if ! [[ "${PUBLIC}" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]] \
   fi
   echo -e "${config}" | yq >"${ROOT}/data/${id}.json"
   # Run a new container
-  ALL_PORTS+=(443)
+  TCP_PORTS+=(443)
+  UDP_PORTS+=(443)
   docker rm --force "${id}" 2>/dev/null
   docker run --detach --name "${id}" --restart always --net host \
     --volume "${id}:/data" \
@@ -382,8 +385,8 @@ if confirm "Should this server be accessible via Shadowsocks with Outline VPN?";
     echo -e "${settings}" >"${ROOT}/settings/outline"
   fi
   source "${ROOT}/settings/outline"
-  TCP_PORTS+=("${api_port}")
-  ALL_PORTS+=("${keys_port}")
+  TCP_PORTS+=("${keys_port}" "${api_port}")
+  UDP_PORTS+=("${keys_port}")
   # Install and run Outline VPN
   url="https://github.com/Jigsaw-Code/outline-server/raw/master"
   url+="/src/server_manager/install_scripts/install_server.sh"
@@ -522,8 +525,11 @@ fi
 VPN_UP="
 log \"Configure VPN\"
 nordvpn whitelist remove all
-$(for port in ${TCP_PORTS[*]} ${ALL_PORTS[*]}; do
-  echo "nordvpn whitelist add port ${port}"
+$(for port in ${TCP_PORTS[*]}; do
+  echo "nordvpn whitelist add port ${port} protocol TCP"
+done)
+$(for port in ${UDP_PORTS[*]}; do
+  echo "nordvpn whitelist add port ${port} protocol UDP"
 done)
 nordvpn whitelist add subnet ${CIDR}
 nordvpn set autoconnect on
@@ -552,8 +558,8 @@ VPN_REPAIR="
 # Extend the guide
 GUIDE+="$(info "NordVPN has been successfully configured:")\n"
 GUIDE+="$(info "- prior country or group:" "${prior:-none}")\n"
-GUIDE+="$(info "- allowed TCP only ports:" "${TCP_PORTS[*]}")\n"
-GUIDE+="$(info "- allowed TCP and UDP ports:" "${ALL_PORTS[*]}")\n\n"
+GUIDE+="$(info "- allowed TCP ports:" "${TCP_PORTS[*]}")\n"
+GUIDE+="$(info "- allowed UDP ports:" "${UDP_PORTS[*]}")\n\n"
 GUIDE+="$(info "Now reboot the server to up the gateway")\n"
 
 ############################
