@@ -68,9 +68,26 @@ function confirm() {
   done
 }
 
-#---------------------
-#   Other functions  |
-#---------------------
+function choose() {
+  style 6 "${1} [and press Enter]:\n" && shift 1
+  # Find choices and notes
+  local i=0 && local choices=() && local notes=() && while [[ $# -gt 0 ]]; do
+    choices[i]="${1}" && notes[i]="${2}" && i=$((i+1)) && shift 2
+  done
+  # Create a temporary associative array for mapping
+  local -A mapping=() && for i in "${!notes[@]}"; do
+    mapping["${notes[i]}"]="${choices[i]}"
+  done
+  # Ask for a choice
+  local note && select note in "${notes[@]}"; do
+    test -n "${note}" && REPLY="${mapping[$note]}" && break
+    style 1 "${REPLY} is a wrong answer\n"
+  done
+}
+
+#----------------
+# Other functions
+#----------------
 
 function command_exists {
   command -v "$@" &>/dev/null
@@ -185,25 +202,15 @@ if confirm "Should this server be accessible via Shadowsocks?"; then
   if test ! -e "${ROOT}/settings/${id}"; then
     settings="secret='$(generate_rand)'\n"
     if confirm "Would you like to make the connection look like an allowed protocol?"; then
-      declare -A protocols=(
-        ["HTTP request"]="POST%20|80 – http"
-        ["HTTP response"]="HTTP%2F1.1%20|80 – http"
-        ["DNS-over-TCP request"]="%05%C3%9C_%C3%A0%01%20|53 – dns"
-        ["SSH"]='SSH-2.0%0D%0A|22 – ssh, 830 – netconf-ssh, 4334 – netconf-ch-ssh, 5162 – snmpssh-trap'
-        ["TLS ClientHello"]='%16%03%01%00%C2%A8%01%01|443 – https, 463 – smtps, 563 – nntps, 636 – ldaps, 989 – ftps-data, 990 – ftps, 993 – imaps, 995 – pop3s, 5223 – Apple APN, 5228 – Play Store, 5349 – turns'
-        ["TLS ServerHello"]='%16%03%03%40%00%02|443 – https, 463 – smtps, 563 – nntps, 636 – ldaps, 989 – ftps-data, 990 – ftps, 993 – imaps, 995 – pop3s, 5223 – Apple APN, 5228 – Play Store, 5349 – turns'
-        ["TLS Application Data"]='%13%03%03%3F|443 – https, 463 – smtps, 563 – nntps, 636 – ldaps, 989 – ftps-data, 990 – ftps, 993 – imaps, 995 – pop3s, 5223 – Apple APN, 5228 – Play Store, 5349 – turns'
-      )
-      echo "Choose an allowed protocol to emulate:"
-      select protocol in "${!protocols[@]}"; do
-        test -n "${protocol}" && echo && break
-      done
-      IFS='|' read -r prefix ports <<< "${protocols[${protocol}]}"
-      echo -e "Recommended ports for ${protocol}: ${ports}\n"
-      prompt "Specify a port from recommended or another one" && {
-        settings+="prefix='${prefix}'\n"
-        settings+="port=${REPLY}"
-      }
+      choose "Choose an allowed protocol to emulate" \
+        "POST%20"                  "HTTP request (80 – http)" \
+        "HTTP%2F1.1%20"            "HTTP response (80 – http)" \
+        "%05%C3%9C_%C3%A0%01%20"   "DNS-over-TCP request (53 – dns)" \
+        "SSH-2.0%0D%0A"            "SSH (22 – ssh, 830 – netconf-ssh, 4334 – netconf-ch-ssh, 5162 – snmpssh-trap)" \
+        "%16%03%01%00%C2%A8%01%01" "TLS ClientHello (443 – https, 463 – smtps, 563 – nntps, 636 – ldaps, 989 – ftps-data, 990 – ftps, 993 – imaps, 995 – pop3s, 5223 – Apple APN, 5228 – Play Store, 5349 – turns)" \
+        "%16%03%03%40%00%02"       "TLS ServerHello (443 – https, 463 – smtps, 563 – nntps, 636 – ldaps, 989 – ftps-data, 990 – ftps, 993 – imaps, 995 – pop3s, 5223 – Apple APN, 5228 – Play Store, 5349 – turns)" \
+        "%13%03%03%3F"             "TLS Application Data (443 – https, 463 – smtps, 563 – nntps, 636 – ldaps, 989 – ftps-data, 990 – ftps, 993 – imaps, 995 – pop3s, 5223 – Apple APN, 5228 – Play Store, 5349 – turns)"
+      settings+="prefix='${REPLY}'\n" && prompt "Specify a port" && settings+="port=${REPLY}"
     else
       settings+="port=$(generate_port)"
     fi
