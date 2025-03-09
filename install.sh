@@ -18,6 +18,7 @@ declare VPN_REPAIR
 declare REMOVE_REQUIREMENTS
 declare REMOVE_INSTRUCTIONS
 CIPHER="chacha20-ietf-poly1305"
+YQ_IMAGE="mikefarah/yq:4" # specified for stability
 SS_IMAGE="ghcr.io/shadowsocks/ssserver-rust:latest"
 WS_IMAGE="ghcr.io/give-me/outlinecaddy:latest"
 CF_IMAGE="cloudflare/cloudflared:latest"
@@ -138,9 +139,11 @@ GUIDE+="$(info "- Gateway:" "${GW}")\n\n"
 # Installing dependencies
 #------------------------
 
-if ! package_exists yq; then
-  apt install yq -y
-fi
+install_docker && docker pull "${YQ_IMAGE}"
+
+function yq() {
+  docker run --rm --interactive --network none "${YQ_IMAGE}" "$@"
+}
 
 #----------------------
 # Preparing file system
@@ -223,7 +226,7 @@ if confirm "Should this server be accessible via Shadowsocks?"; then
   config+="server_port: ${port}\n"
   config+="password: ${secret}\n"
   config+="method: ${CIPHER}"
-  echo -e "${config}" | yq >"${ROOT}/data/${id}.json"
+  echo -e "${config}" | yq --output-format json >"${ROOT}/data/${id}.json"
   # Run a new container
   TCP_PORTS+=("${port}")
   UDP_PORTS+=("${port}")
@@ -349,7 +352,7 @@ if ! [[ "${PUBLIC}" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]] \
       config+="              Location: [${REPLY}]\n"
     fi
   fi
-  echo -e "${config}" | yq >"${ROOT}/data/${id}.json"
+  echo -e "${config}" | yq --output-format json >"${ROOT}/data/${id}.json"
   # Run a new container
   TCP_PORTS+=(443)
   UDP_PORTS+=(443)
@@ -402,7 +405,7 @@ if confirm "Should this server be accessible via Shadowsocks with Outline VPN?";
   cert_sha=$(grep "certSha256" "${secret}" | sed "s/certSha256://" || :)
   details="apiUrl: ${api_url}\n"
   details+="certSha256: ${cert_sha}"
-  details=$(echo -e "${details}" | yq --indent 0)
+  details=$(echo -e "${details}" | yq --output-format json --indent 0)
   if test "${api_url}" -a "${cert_sha}"; then
     GUIDE+="$(info "In order to access via Outline VPN, do the following:")\n"
     GUIDE+="$(info "1) Ensure that ports are open:")\n"
