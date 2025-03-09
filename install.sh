@@ -105,6 +105,12 @@ function install_docker() {
   fi
 }
 
+function latest_version() {
+  curl -s "https://hub.docker.com/v2/repositories/library/${1}/tags/?page_size=100" | \
+    yq --unwrapScalar=true '.results[] | select(.name | test("^[.0-9]+$")) | .name' | \
+    sort --version-sort | tail --lines=1
+}
+
 function generate_port() {
   echo $((1024 + RANDOM + (RANDOM % 2) * 30000))
 }
@@ -330,27 +336,60 @@ if ! [[ "${PUBLIC}" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]] \
   config+="            body: |\n"
   spaces=$(echo -e "${config}" | tail -n 2 | grep -o '^ *')
   config+="$(echo -e "${key}" | sed "s/^/${spaces}  /")\n"
-  # Add optional redirect for other paths
-  if confirm "Would you like to specify an HTTP status code for bad paths?"; then
-    choose "Choose an HTTP status code for bad paths" \
+  # Offer optional behavior of Caddy
+  declare handle
+  # – offer emulation of another web server
+  if confirm "Would you like to handle bad paths at ${PUBLIC} with emulation of another web server?"; then
+    # Actual trends are published here — https://w3techs.com/technologies/history_overview/web_server
+    choose "Choose another web server to emulate" \
+      "nginx" "Nginx" \
+      "httpd" "Apache" \
+      "node"  "Node.js" \
+      "ls"    "LiteSpeed"
+    case ${REPLY} in
+      nginx)
+        server="nginx/$(latest_version "nginx")"
+        ;;
+      httpd)
+        platforms=("FreeBSD" "Unix" "Linux" "Debian" "Ubuntu" "CentOS" "Fedora" "Red Hat")
+        platform=${platforms[$((RANDOM % ${#platforms[@]}))]}
+        server="Apache/$(latest_version "httpd") (${platform})"
+        ;;
+      node)
+        server="Node.js/$(latest_version "node")"
+        ;;
+      ls)
+        server="LiteSpeed"
+        ;;
+    esac
+    handle+="          - handler: headers\n"
+    handle+="            response:\n"
+    handle+="              set:\n"
+    handle+="                Server: ['${server}']\n"
+  fi
+  # – offer a custom HTTP status code
+  if confirm "Would you like to handle bad paths at ${PUBLIC} with a custom HTTP status code?"; then
+    choose "Choose a custom HTTP status code" \
       301 "301 – Permanent Redirect" \
       302 "302 – Temporary Redirect" \
       401 "401 – Unauthorized" \
       403 "403 – Forbidden" \
       404 "404 – Not Found" \
       500 "500 – Server Error"
-    # Add configuration to Caddy config
+    handle+="          - handler: static_response\n"
+    handle+="            status_code: ${REPLY}\n"
+    if [ "${REPLY}" = 301 ] || [ "${REPLY}" = 302 ]; then
+      prompt "Specify a URL to redirect to (e.g. https://example.com)"
+      handle+="            headers:\n"
+      handle+="              Location: [${REPLY}]\n"
+    fi
+  fi
+  # – add optional handlers to the config
+  if test -n "${handle-}"; then
     config+="        - match:\n"
     config+="          - host: ['${PUBLIC}']\n"
     config+="          handle:\n"
-    config+="          - handler: static_response\n"
-    config+="            status_code: ${REPLY}\n"
-    # If redirect code is selected, prompt for a URL
-    if [ "${REPLY}" = 301 ] || [ "${REPLY}" = 302 ]; then
-      prompt "Specify a URL to redirect to (e.g. https://example.com)"
-      config+="            headers:\n"
-      config+="              Location: [${REPLY}]\n"
-    fi
+    config+="${handle}"
   fi
   echo -e "${config}" | yq --output-format json >"${ROOT}/data/${id}.json"
   # Run a new container
