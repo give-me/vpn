@@ -33,7 +33,7 @@ CF_IMAGE="cloudflare/cloudflared:latest"
 #---------------------
 
 function style() {
-  msg="$(tput setaf "${1}")${2}"
+  local msg && msg="$(tput setaf "${1}")${2}"
   test -z "${3-}" || msg+=" $(tput bold)${3}"
   echo -e -n "${msg}$(tput sgr0)"
 }
@@ -663,6 +663,6 @@ EOL
 chmod +x "${ROOT}/bin/"*
 
 # Save the guide and notify about following actions
-clear -x && GUIDE="$(info "NordVPN Gateway " "v. 0.11")\n\n${GUIDE}"
+clear -x && GUIDE="$(info "NordVPN Gateway " "v. 0.12")\n\n${GUIDE}"
 echo -e ${GUIDE} | sed 's/\x1B\[[0-9;]*[JKmsu]//g' >"${ROOT}/guide.txt"
 echo -e ${GUIDE}
