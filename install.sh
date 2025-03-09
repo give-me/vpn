@@ -6,8 +6,8 @@ set -o nounset
 
 TITLE="vpn-gateway"
 ROOT="/opt/${TITLE}"
-TCP_PORTS=(22) # TCP only
-ALL_PORTS=()   # TCP and UDP
+TCP_PORTS=(22)
+UDP_PORTS=()
 TASK_TO_START="${ROOT}/bin/gateway.sh"
 TASK_TO_REINSTALL="${ROOT}/bin/reinstall.sh"
 TASK_TO_UNINSTALL="${ROOT}/bin/uninstall.sh"
@@ -18,6 +18,7 @@ declare VPN_REPAIR
 declare REMOVE_REQUIREMENTS
 declare REMOVE_INSTRUCTIONS
 CIPHER="chacha20-ietf-poly1305"
+YQ_IMAGE="mikefarah/yq:4" # specified for stability
 SS_IMAGE="ghcr.io/shadowsocks/ssserver-rust:latest"
 WS_IMAGE="ghcr.io/give-me/outlinecaddy:latest"
 CF_IMAGE="cloudflare/cloudflared:latest"
@@ -32,7 +33,7 @@ CF_IMAGE="cloudflare/cloudflared:latest"
 #---------------------
 
 function style() {
-  msg="$(tput setaf "${1}")${2}"
+  local msg && msg="$(tput setaf "${1}")${2}"
   test -z "${3-}" || msg+=" $(tput bold)${3}"
   echo -e -n "${msg}$(tput sgr0)"
 }
@@ -68,9 +69,26 @@ function confirm() {
   done
 }
 
-#---------------------
-#   Other functions  |
-#---------------------
+function choose() {
+  style 6 "${1} [and press Enter]:\n" && shift 1
+  # Find choices and notes
+  local i=0 && local choices=() && local notes=() && while [[ $# -gt 0 ]]; do
+    choices[i]="${1}" && notes[i]="${2}" && i=$((i+1)) && shift 2
+  done
+  # Create a temporary associative array for mapping
+  local -A mapping=() && for i in "${!notes[@]}"; do
+    mapping["${notes[i]}"]="${choices[i]}"
+  done
+  # Ask for a choice
+  local note && select note in "${notes[@]}"; do
+    test -n "${note}" && REPLY="${mapping[$note]}" && break
+    style 1 "${REPLY} is a wrong answer\n"
+  done
+}
+
+#----------------
+# Other functions
+#----------------
 
 function command_exists {
   command -v "$@" &>/dev/null
@@ -85,6 +103,12 @@ function install_docker() {
     info "Install Docker\n"
     curl -fsSL https://get.docker.com | sh
   fi
+}
+
+function latest_version() {
+  curl -s "https://hub.docker.com/v2/repositories/library/${1}/tags/?page_size=100" | \
+    yq --unwrapScalar=true '.results[] | select(.name | test("^[.0-9]+$")) | .name' | \
+    sort --version-sort | tail --lines=1
 }
 
 function generate_port() {
@@ -121,9 +145,11 @@ GUIDE+="$(info "- Gateway:" "${GW}")\n\n"
 # Installing dependencies
 #------------------------
 
-if ! package_exists yq; then
-  apt install yq -y
-fi
+install_docker && docker pull "${YQ_IMAGE}"
+
+function yq() {
+  docker run --rm --interactive --network none "${YQ_IMAGE}" "$@"
+}
 
 #----------------------
 # Preparing file system
@@ -158,6 +184,7 @@ done
 clear -x
 if confirm "Should ports for HTTP and HTTPS be allowed for other needs?"; then
   TCP_PORTS+=(80 443)
+  UDP_PORTS+=(80 443)
 fi
 
 ##########################################
@@ -185,25 +212,15 @@ if confirm "Should this server be accessible via Shadowsocks?"; then
   if test ! -e "${ROOT}/settings/${id}"; then
     settings="secret='$(generate_rand)'\n"
     if confirm "Would you like to make the connection look like an allowed protocol?"; then
-      declare -A protocols=(
-        ["HTTP request"]="POST%20|80 – http"
-        ["HTTP response"]="HTTP%2F1.1%20|80 – http"
-        ["DNS-over-TCP request"]="%05%C3%9C_%C3%A0%01%20|53 – dns"
-        ["SSH"]='SSH-2.0%0D%0A|22 – ssh, 830 – netconf-ssh, 4334 – netconf-ch-ssh, 5162 – snmpssh-trap'
-        ["TLS ClientHello"]='%16%03%01%00%C2%A8%01%01|443 – https, 463 – smtps, 563 – nntps, 636 – ldaps, 989 – ftps-data, 990 – ftps, 993 – imaps, 995 – pop3s, 5223 – Apple APN, 5228 – Play Store, 5349 – turns'
-        ["TLS ServerHello"]='%16%03%03%40%00%02|443 – https, 463 – smtps, 563 – nntps, 636 – ldaps, 989 – ftps-data, 990 – ftps, 993 – imaps, 995 – pop3s, 5223 – Apple APN, 5228 – Play Store, 5349 – turns'
-        ["TLS Application Data"]='%13%03%03%3F|443 – https, 463 – smtps, 563 – nntps, 636 – ldaps, 989 – ftps-data, 990 – ftps, 993 – imaps, 995 – pop3s, 5223 – Apple APN, 5228 – Play Store, 5349 – turns'
-      )
-      echo "Choose an allowed protocol to emulate:"
-      select protocol in "${!protocols[@]}"; do
-        test -n "${protocol}" && echo && break
-      done
-      IFS='|' read -r prefix ports <<< "${protocols[${protocol}]}"
-      echo -e "Recommended ports for ${protocol}: ${ports}\n"
-      prompt "Specify a port from recommended or another one" && {
-        settings+="prefix='${prefix}'\n"
-        settings+="port=${REPLY}"
-      }
+      choose "Choose an allowed protocol to emulate" \
+        "POST%20"                  "HTTP request (80 – http)" \
+        "HTTP%2F1.1%20"            "HTTP response (80 – http)" \
+        "%05%C3%9C_%C3%A0%01%20"   "DNS-over-TCP request (53 – dns)" \
+        "SSH-2.0%0D%0A"            "SSH (22 – ssh, 830 – netconf-ssh, 4334 – netconf-ch-ssh, 5162 – snmpssh-trap)" \
+        "%16%03%01%00%C2%A8%01%01" "TLS ClientHello (443 – https, 463 – smtps, 563 – nntps, 636 – ldaps, 989 – ftps-data, 990 – ftps, 993 – imaps, 995 – pop3s, 5223 – Apple APN, 5228 – Play Store, 5349 – turns)" \
+        "%16%03%03%40%00%02"       "TLS ServerHello (443 – https, 463 – smtps, 563 – nntps, 636 – ldaps, 989 – ftps-data, 990 – ftps, 993 – imaps, 995 – pop3s, 5223 – Apple APN, 5228 – Play Store, 5349 – turns)" \
+        "%13%03%03%3F"             "TLS Application Data (443 – https, 463 – smtps, 563 – nntps, 636 – ldaps, 989 – ftps-data, 990 – ftps, 993 – imaps, 995 – pop3s, 5223 – Apple APN, 5228 – Play Store, 5349 – turns)"
+      settings+="prefix='${REPLY}'\n" && prompt "Specify a port" && settings+="port=${REPLY}"
     else
       settings+="port=$(generate_port)"
     fi
@@ -215,9 +232,10 @@ if confirm "Should this server be accessible via Shadowsocks?"; then
   config+="server_port: ${port}\n"
   config+="password: ${secret}\n"
   config+="method: ${CIPHER}"
-  echo -e "${config}" | yq >"${ROOT}/data/${id}.json"
+  echo -e "${config}" | yq --output-format json >"${ROOT}/data/${id}.json"
   # Run a new container
-  ALL_PORTS+=("${port}")
+  TCP_PORTS+=("${port}")
+  UDP_PORTS+=("${port}")
   docker rm --force "${id}" 2>/dev/null
   docker run --detach --name "${id}" --restart always --net host \
     --volume "${ROOT}/data/${id}.json:/etc/shadowsocks-rust/config.json" \
@@ -318,21 +336,65 @@ if ! [[ "${PUBLIC}" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]] \
   config+="            body: |\n"
   spaces=$(echo -e "${config}" | tail -n 2 | grep -o '^ *')
   config+="$(echo -e "${key}" | sed "s/^/${spaces}  /")\n"
-  # Add optional redirect for other paths
-  if confirm "Would you like to add a redirect from bad paths to another URL?"; then
-    prompt "Specify a URL to redirect to (e.g. https://example.com)" && url="${REPLY}"
-    # Add redirect configuration to Caddy config
+  # Offer optional behavior of Caddy
+  declare handle
+  # – offer emulation of another web server
+  if confirm "Would you like to handle bad paths at ${PUBLIC} with emulation of another web server?"; then
+    # Actual trends are published here — https://w3techs.com/technologies/history_overview/web_server
+    choose "Choose another web server to emulate" \
+      "nginx" "Nginx" \
+      "httpd" "Apache" \
+      "node"  "Node.js" \
+      "ls"    "LiteSpeed"
+    case ${REPLY} in
+      nginx)
+        server="nginx/$(latest_version "nginx")"
+        ;;
+      httpd)
+        platforms=("FreeBSD" "Unix" "Linux" "Debian" "Ubuntu" "CentOS" "Fedora" "Red Hat")
+        platform=${platforms[$((RANDOM % ${#platforms[@]}))]}
+        server="Apache/$(latest_version "httpd") (${platform})"
+        ;;
+      node)
+        server="Node.js/$(latest_version "node")"
+        ;;
+      ls)
+        server="LiteSpeed"
+        ;;
+    esac
+    handle+="          - handler: headers\n"
+    handle+="            response:\n"
+    handle+="              set:\n"
+    handle+="                Server: ['${server}']\n"
+  fi
+  # – offer a custom HTTP status code
+  if confirm "Would you like to handle bad paths at ${PUBLIC} with a custom HTTP status code?"; then
+    choose "Choose a custom HTTP status code" \
+      301 "301 – Permanent Redirect" \
+      302 "302 – Temporary Redirect" \
+      401 "401 – Unauthorized" \
+      403 "403 – Forbidden" \
+      404 "404 – Not Found" \
+      500 "500 – Server Error"
+    handle+="          - handler: static_response\n"
+    handle+="            status_code: ${REPLY}\n"
+    if [ "${REPLY}" = 301 ] || [ "${REPLY}" = 302 ]; then
+      prompt "Specify a URL to redirect to (e.g. https://example.com)"
+      handle+="            headers:\n"
+      handle+="              Location: [${REPLY}]\n"
+    fi
+  fi
+  # – add optional handlers to the config
+  if test -n "${handle-}"; then
     config+="        - match:\n"
     config+="          - host: ['${PUBLIC}']\n"
     config+="          handle:\n"
-    config+="          - handler: static_response\n"
-    config+="            status_code: 302\n"
-    config+="            headers:\n"
-    config+="              Location: [${url}]\n"
+    config+="${handle}"
   fi
-  echo -e "${config}" | yq >"${ROOT}/data/${id}.json"
+  echo -e "${config}" | yq --output-format json >"${ROOT}/data/${id}.json"
   # Run a new container
-  ALL_PORTS+=(443)
+  TCP_PORTS+=(443)
+  UDP_PORTS+=(443)
   docker rm --force "${id}" 2>/dev/null
   docker run --detach --name "${id}" --restart always --net host \
     --volume "${id}:/data" \
@@ -365,8 +427,8 @@ if confirm "Should this server be accessible via Shadowsocks with Outline VPN?";
     echo -e "${settings}" >"${ROOT}/settings/outline"
   fi
   source "${ROOT}/settings/outline"
-  TCP_PORTS+=("${api_port}")
-  ALL_PORTS+=("${keys_port}")
+  TCP_PORTS+=("${keys_port}" "${api_port}")
+  UDP_PORTS+=("${keys_port}")
   # Install and run Outline VPN
   url="https://github.com/Jigsaw-Code/outline-server/raw/master"
   url+="/src/server_manager/install_scripts/install_server.sh"
@@ -382,7 +444,7 @@ if confirm "Should this server be accessible via Shadowsocks with Outline VPN?";
   cert_sha=$(grep "certSha256" "${secret}" | sed "s/certSha256://" || :)
   details="apiUrl: ${api_url}\n"
   details+="certSha256: ${cert_sha}"
-  details=$(echo -e "${details}" | yq --indent 0)
+  details=$(echo -e "${details}" | yq --output-format json --indent 0)
   if test "${api_url}" -a "${cert_sha}"; then
     GUIDE+="$(info "In order to access via Outline VPN, do the following:")\n"
     GUIDE+="$(info "1) Ensure that ports are open:")\n"
@@ -505,8 +567,11 @@ fi
 VPN_UP="
 log \"Configure VPN\"
 nordvpn whitelist remove all
-$(for port in ${TCP_PORTS[*]} ${ALL_PORTS[*]}; do
-  echo "nordvpn whitelist add port ${port}"
+$(for port in ${TCP_PORTS[*]}; do
+  echo "nordvpn whitelist add port ${port} protocol TCP"
+done)
+$(for port in ${UDP_PORTS[*]}; do
+  echo "nordvpn whitelist add port ${port} protocol UDP"
 done)
 nordvpn whitelist add subnet ${CIDR}
 nordvpn set autoconnect on
@@ -535,8 +600,8 @@ VPN_REPAIR="
 # Extend the guide
 GUIDE+="$(info "NordVPN has been successfully configured:")\n"
 GUIDE+="$(info "- prior country or group:" "${prior:-none}")\n"
-GUIDE+="$(info "- allowed TCP only ports:" "${TCP_PORTS[*]}")\n"
-GUIDE+="$(info "- allowed TCP and UDP ports:" "${ALL_PORTS[*]}")\n\n"
+GUIDE+="$(info "- allowed TCP ports:" "${TCP_PORTS[*]}")\n"
+GUIDE+="$(info "- allowed UDP ports:" "${UDP_PORTS[*]}")\n\n"
 GUIDE+="$(info "Now reboot the server to up the gateway")\n"
 
 ############################
@@ -598,6 +663,6 @@ EOL
 chmod +x "${ROOT}/bin/"*
 
 # Save the guide and notify about following actions
-clear -x && GUIDE="$(info "NordVPN Gateway " "v. 0.11")\n\n${GUIDE}"
+clear -x && GUIDE="$(info "NordVPN Gateway " "v. 0.12")\n\n${GUIDE}"
 echo -e ${GUIDE} | sed 's/\x1B\[[0-9;]*[JKmsu]//g' >"${ROOT}/guide.txt"
 echo -e ${GUIDE}
