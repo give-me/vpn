@@ -1,24 +1,18 @@
 # NordVPN Gateway
 
 NordVPN Gateway is a tool which turns your server into a gateway where NordVPN connection is placed behind different
-channels, like standalone [Shadowsocks](https://shadowsocks.org/), [Outline](https://getoutline.org/)
-and/or [Cloudflare Zero Trust](https://www.cloudflare.com/zero-trust/). It is useful when you cannot
-access [NordVPN](https://nordvpn.com/) directly or do not have a stable connection, but you do love their great
+channels, like standalone [Shadowsocks](https://shadowsocks.org/) and Shadowsocks-over-WebSockets. It is useful when you
+cannot access [NordVPN](https://nordvpn.com/) directly or do not have a stable connection, but you do love their great
 protection including hiding your IP address and other cool features.
 
 ## Installation
 
-There are three channels that can be used individually or jointly to access the gateway from your devices:
+There are two channels that can be used individually or jointly to access the gateway from your devices:
 
-| Channel                                 | Difficulty | Access control | Public access to a server  | Requirements                                                                                                                          |
-|-----------------------------------------|------------|----------------|----------------------------|---------------------------------------------------------------------------------------------------------------------------------------|
-| Shadowsocks (traffic masking available) | Low        | Shared key     | Required by a domain or IP | Install [Outline Client App](https://getoutline.org/get-started/)                                                                     |
-| Shadowsocks-over-WebSockets             | Normal     | Shared key     | Required by a domain only  | Install [Outline Client App](https://getoutline.org/get-started/)                                                                     |
-| Shadowsocks with Outline VPN            | Normal     | Personal keys  | Required by a domain or IP | Install [Outline Client App and Outline Manager](https://getoutline.org/get-started/)                                                 |
-| Cloudflare Zero Trust                   | High       | Advanced       | Not required               | Get a free account for [Cloudflare Zero Trust](https://www.cloudflare.com/zero-trust/) and install [Cloudflare One](https://1.1.1.1/) |
-
-> If your server has an ARM processor, you should not choose Outline VPN as a channel during installation because
-> vanilla Outline VPN does not support ARM processors. Other channels work perfectly with ARM processors.
+| Channel                                 | Difficulty | Access control | Public access to a server  | Requirements                                                      |
+|-----------------------------------------|------------|----------------|----------------------------|-------------------------------------------------------------------|
+| Shadowsocks (traffic masking available) | Low        | Shared key     | Required by a domain or IP | Install [Outline Client App](https://getoutline.org/get-started/) |
+| Shadowsocks-over-WebSockets             | Normal     | Shared key     | Required by a domain only  | Install [Outline Client App](https://getoutline.org/get-started/), point the domain to the server and keep the port 443 free |
 
 1. Make some preparations:
     1. Buy a subscription for [NordVPN](https://nordvpn.com/).
@@ -29,26 +23,33 @@ There are three channels that can be used individually or jointly to access the 
 
    ```sudo --login```
 
-3. If you have no any possibility to reboot the server without SSH, it is strongly recommended to enable periodic reboot
-   server because NordVPN may hang and block access to the server via SSH until reboot (this has happened a couple of
-   times on ARM processors). For example, you can do it with a command below every Sunday at 12:00 AM:
-
-   ```(crontab -l 2>/dev/null; echo "@weekly /usr/sbin/reboot --force --force >/dev/null 2>&1") | crontab -```
-
-4. Upgrade the server:
+3. Upgrade the server:
 
    ```apt update && apt upgrade -y```
 
-5. Configure the server and follow further instructions:
+4. Configure the server and follow further instructions:
 
    ```bash -c "$(curl -sSL https://github.com/give-me/vpn/raw/master/install.sh)"```
 
 ## Under the hood
 
-After following the instructions mentioned above, the channels configured by you will *automatically* start. After each
-rebooting the server, CRON *automatically* runs a script ```/opt/vpn-gateway/bin/gateway.sh``` which configures the
-server, connects VPN and checks health periodically. In case of connection loss, the script tries to reconnect VPN and
-reboots the server if tryings failed.
+Everything runs in Docker containers (Docker is installed from [get.docker.com](https://get.docker.com) if absent),
+the routing of the host is left untouched and public ports are published by Docker as usual:
+
+- `gateway` container holds the NordVPN client with its kill switch, so the host is never blocked and SSH always works.
+  A script inside the container connects the tunnel, checks every 15 seconds that the tunnel is up and Internet is
+  reachable through it, logs in again if NordVPN has logged the gateway out, reconnects when needed, and exits as a
+  last resort to be restarted by Docker. While the tunnel is down, the kill switch leaves the channels without
+  Internet instead of leaking traffic, and an own firewall rule of the container does the same even if the client is
+  not running at all.
+- The channels run inside the network of the `gateway` container, so their traffic can go to Internet through the
+  tunnel only. Public ports are forwarded by Docker to random internal ports which are the only ones let through the
+  kill switch.
+- CRON runs `/opt/vpn-gateway/bin/watch.sh` every minute to log changes of the tunnel health, to restart the
+  `gateway` container if it stays unhealthy for 10 minutes and to start the channels if they are stopped or Docker
+  has restarted the `gateway` container (they lose the network in this case). The channels are never started by
+  Docker itself (e.g. after a reboot of the server), only by the watcher and only when the firewall rule of the
+  `gateway` container is already in place.
 
 A file structure created by this tool during installation or using is as follows:
 
@@ -59,7 +60,8 @@ A file structure created by this tool during installation or using is as follows
 │       ├── settings/         (a place to store channels' settings)
 │       ├── data/             (a place to store channels' data)
 │       ├── bin/
-│       │   ├── gateway.sh    (a task to start the gateway)
+│       │   ├── start.sh      (a task to start the gateway)
+│       │   ├── watch.sh      (a task to watch the containers)
 │       │   ├── reinstall.sh  (a task to reinstall this tool)
 │       │   └── uninstall.sh  (a task to uninstall this tool)
 │       └── guide.txt         (instructions generated by this tool)
@@ -72,51 +74,39 @@ Detailed scheme of traffic routing between your device and Internet for each of 
 
 ```mermaid
 flowchart LR
-    Y --Shadowsocks-->                   SS --Shadowsocks-->                                      VC
-    Y --Shadowsocks-over-WebSockets-->   WS --Shadowsocks-over-WebSockets-->                      VC
-    Y --Shadowsocks with Outline VPN-->  SO --Shadowsocks with Outline VPN-->                     VC
-    Y --Cloudflare--> CN --Cloudflare--> VN --Cloudflare--> VC --Cloudflare--> CC --Cloudflare--> VC
-
+    Y --Shadowsocks-->                 SS --Shadowsocks-->                 VC
+    Y --Shadowsocks-over-WebSockets--> WS --Shadowsocks-over-WebSockets--> VC
     VC --All the channels--> VN ---> I
-    
+
     Y[Your device]
     VN[NordVPN network]
-    CN[Cloudflare network]
     I[Internet]
 
     subgraph Your server
-        SS[Shadowsocks container]
-        WS[Caddy container]
-        SO[Outline container]
-        CC[Cloudflared container]
-        VC[NordVPN client]
+        subgraph Network of the gateway container
+            SS[Shadowsocks container]
+            WS[Caddy container]
+            VC[Gateway container]
+        end
     end
 ```
 
-It is important to note that whereas all the channels except Cloudflare Zero require the server to be publicly
-accessible to establish connections from your devices to the gateway, Cloudflare Zero Trust channel **can work with any
-server**, even a virtual server running locally and inaccessible from the outside.
-
 ## Maintenance
 
-While your computer connected to VPN provided with this tool, it is impossible to connect to the server (e.g. via SSH or
-to Outline Manager) because of strict firewall rules. Just disconnect VPN before such connections.
+Instructions generated by this tool can be retrieved anytime by running ```cat /opt/vpn-gateway/guide.txt```. Useful
+commands:
 
-Instructions generated by this tool can be retrieved anytime by running ```cat /opt/vpn-gateway/guide.txt```. Important
-events and useful recommendations for the cases of loosing authorization and other problems will be available in a log
-by running ```tail -f /var/log/vpn-gateway.log```. Open ports using by this tool can be found by running
-```ss --processes --listening --tcp```.
+- ```docker ps``` shows the containers and health of the tunnel;
+- ```docker exec gateway nordvpn status``` shows the current server of the tunnel;
+- ```docker logs gateway``` shows events of the tunnel including reconnections and detected leaks;
+- ```tail -f /var/log/vpn-gateway.log``` shows events of this tool.
 
 In order to reconfigure the gateway *without* updating this tool, just run ```/opt/vpn-gateway/bin/reinstall.sh``` as
-root. In order to reconfigure the gateway *with* updating this tool to the latest version, just repeat the 2nd and 5th
-steps of the installation guide. Upgrading Shadowsocks and Cloudflared is made during any way of reconfiguration.
+root. In order to reconfigure the gateway *with* updating this tool to the latest version, just repeat the 2nd and 4th
+steps of the installation guide. Upgrading NordVPN, Shadowsocks and Caddy is made during any way of reconfiguration.
 
 ## Uninstallation
 
 In order to uninstall this tool, just run ```/opt/vpn-gateway/bin/uninstall.sh``` as root. In this case, logging out
-from NordVPN is made with a command ```nordvpn logout``` instead of ```nordvpn logout --persist-token``` your token will
-expire regardless of which token you specified (expirable in 30 days or non-expirable).
-
-Additionally, if Cloudflare Zero Trust was configured as a channel, you can delete unnecessary API Tokens created upon
-request of this tool and available [here](https://dash.cloudflare.com/profile/api-tokens) because Cloudflare set a limit
-of API Tokens.
+from NordVPN is made with a command ```nordvpn logout``` instead of ```nordvpn logout --persist-token```, so your token
+will expire regardless of which token you specified (expirable in 30 days or non-expirable).
